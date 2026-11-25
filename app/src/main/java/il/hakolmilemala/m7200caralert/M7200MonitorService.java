@@ -316,8 +316,12 @@ public final class M7200MonitorService extends Service {
 
             if (update == null) {
                 manager.cancel(NOTIFICATION_UPDATE_ID);
+                prefs.edit().remove("last_notified_update_version").apply();
                 return;
             }
+
+            String lastNotified = prefs.getString("last_notified_update_version", "");
+            if (update.version.equals(lastNotified)) return;
 
             Intent open = new Intent(this, MainActivity.class);
             open.putExtra("check_updates_now", true);
@@ -337,6 +341,7 @@ public final class M7200MonitorService extends Service {
                     .setOnlyAlertOnce(true)
                     .build();
             manager.notify(NOTIFICATION_UPDATE_ID, notification);
+            prefs.edit().putString("last_notified_update_version", update.version).apply();
         } catch (Exception ignored) {
             // A failed online check must never interfere with battery monitoring.
         }
