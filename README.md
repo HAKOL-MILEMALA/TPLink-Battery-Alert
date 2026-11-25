@@ -21,7 +21,15 @@ The userscript warns at 15% battery and raises an urgent alert at 10%. It estima
 
 The browser version performs a live compatibility check using the router's local API. It supports only devices that successfully complete the login flow and return a valid battery percentage; TP-Link branding or tpMiFi-app support alone is not enough to establish protocol compatibility. A report button opens a pre-filled GitHub issue draft for successful tests or protocol mismatches. Reports are never submitted automatically.
 
-For first-time setup, open the router's local HTTP management page once so the script can save its local address. Keep Chrome open with at least one HTTPS tab while monitoring. The script requires a broad Tampermonkey `@connect *` grant for varying local router addresses, but validates that the selected target is a private IP address or a known TP-Link local hostname before making requests.
+For first-time setup, open the router's local HTTP management page once so the script can save its local address. Keep Chrome open with at least one HTTPS tab while monitoring.
+
+### Privacy and Tampermonkey's cross-origin permission prompt
+
+Tampermonkey may ask permission before the userscript contacts a router address such as `http://192.168.0.1/cgi-bin/auth_cgi`. This is **not a GitHub data-collection warning**. The source URL is simply the HTTPS tab where the userscript is running (for example, GitHub or Gmail); the destination is the router on the local Wi-Fi network. The script uses the router's local `auth_cgi` endpoint to authenticate and `web_cgi` to read battery status.
+
+The script declares several common router IPs and TP-Link local hostnames in `@connect`. The `@connect *` entry is a fallback for routers using other local IP addresses; it does not make the script send requests to every website. For an unlisted destination, Tampermonkey may still ask the user before the first request. The code itself validates that a router target is a private/link-local IPv4 address or one of the known TP-Link local hostnames before making a request. When prompted, **Always allow** applies to that specific host; there is no need to choose **Always allow all domains**.
+
+The userscript stores the router address, battery history, alert state and router management password in Tampermonkey's local storage. The password is **not encrypted by the userscript itself**; it is used for router authentication and is not included in compatibility reports. The userscript code contains no analytics, tracking, or automatic upload of battery data to a remote server. Tampermonkey separately contacts GitHub for script updates. A compatibility report is opened only after the user clicks the report button; it is a pre-filled issue draft that the user must review and submit manually. It contains model/firmware information and the test result, but excludes the password, local IP address, Wi-Fi name, MAC address and IMEI.
 
 The script uses Tampermonkey `@updateURL` and `@downloadURL` metadata for automatic update checks.
 
