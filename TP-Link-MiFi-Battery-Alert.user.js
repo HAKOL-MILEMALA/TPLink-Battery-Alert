@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.9
+// @version      1.5.10
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -38,7 +38,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.9';
+    const SCRIPT_VERSION = '1.5.10';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -58,6 +58,15 @@
             value === 'tplinkmodem.net';
     }
 
+    // Legacy versions used 192.168.0.1 as their fixed router address.
+    // Migrate only when a saved password exists and no router origin was saved.
+    if (
+        !GM_getValue(ROUTER_STORAGE_KEY, '') &&
+        GM_getValue('m7200_password', '')
+    ) {
+        GM_setValue(ROUTER_STORAGE_KEY, 'http://192.168.0.1');
+    }
+
     function isPotentialMiFiManagementPage() {
         if (location.protocol !== 'http:' || !isAllowedRouterHost(location.hostname)) return false;
         if (location.hostname.toLowerCase() === 'tplinkmifi.net') return true;
@@ -71,19 +80,38 @@
         const hasTpLinkBrand = /TP[\s-]?Link/i.test(pageText);
         const hasMiFiModel = /\bM\d{3,5}\b/i.test(pageText);
 
-        // A generic TP-Link router (Archer/Deco) is not enough.
-        return hasMiFiLabel || (hasTpLinkBrand && hasMiFiModel);
+        // Do not mistake Huawei/ZTE MiFi pages for TP-Link devices.
+        return hasTpLinkBrand && (hasMiFiLabel || hasMiFiModel);
     }
 
     const SAVED_ROUTER_ORIGIN = String(
         GM_getValue(ROUTER_STORAGE_KEY, '') || ''
     ).replace(/\/+$/, '');
 
+    function isConfiguredMiFiHostnameAlias() {
+        if (
+            !SAVED_ROUTER_ORIGIN ||
+            location.protocol !== 'http:' ||
+            location.hostname.toLowerCase() !== 'tplinkmifi.net'
+        ) return false;
+
+        try {
+            const saved = new URL(SAVED_ROUTER_ORIGIN);
+            return saved.protocol === 'http:' && isPrivateIPv4(saved.hostname);
+        } catch (_) {
+            return false;
+        }
+    }
+
     function isRouterManagementPage() {
         if (location.protocol !== 'http:') return false;
 
-        // Once a router has been configured, only its exact origin is trusted.
-        if (SAVED_ROUTER_ORIGIN) return location.origin === SAVED_ROUTER_ORIGIN;
+        // The dedicated tp-link MiFi hostname is an alias for a configured
+        // private IPv4 router, not a different device.
+        if (SAVED_ROUTER_ORIGIN) {
+            return location.origin === SAVED_ROUTER_ORIGIN ||
+                isConfiguredMiFiHostnameAlias();
+        }
 
         return isPotentialMiFiManagementPage();
     }
@@ -92,6 +120,7 @@
     const IS_ROUTER_SWITCH_CANDIDATE = Boolean(
         SAVED_ROUTER_ORIGIN &&
         location.origin !== SAVED_ROUTER_ORIGIN &&
+        !IS_ROUTER_PAGE &&
         isPotentialMiFiManagementPage()
     );
     const IS_ROUTER_UI_PAGE = IS_ROUTER_PAGE || IS_ROUTER_SWITCH_CANDIDATE;
@@ -112,9 +141,8 @@
             GM_getValue(ROUTER_STORAGE_KEY, '') || ''
         ).replace(/\/+$/, '');
 
-        if (previousHost !== location.origin) {
-            // First-time discovery only. A different configured origin is never
-            // silently adopted, and a saved password is never deleted here.
+        if (!previousHost) {
+            // First-time discovery only; legacy installations are migrated above.
             GM_setValue('m7200_history', []);
             GM_setValue('m7200_alarm_state', {stage: 0, wasCharging: false});
             GM_setValue('m7200_snooze', null);
@@ -124,8 +152,8 @@
             GM_setValue('tplink_mifi_router_fingerprint', '');
             GM_setValue('tplink_mifi_compatibility_state', null);
             GM_setValue('m7200_panel_dismissed_origin', '');
+            GM_setValue(ROUTER_STORAGE_KEY, location.origin);
         }
-        GM_setValue(ROUTER_STORAGE_KEY, location.origin);
     }
 
     function getRouterBase() {
@@ -920,7 +948,8 @@
             delete presence.__switching;
             presence[INSTANCE_ID] = now;
         } else {
-            delete presence[INSTANCE_ID];
+            // Keep a 12-second grace period for navigation/reload of the router UI.
+            presence[INSTANCE_ID] = now - ROUTER_PRESENCE_TTL + 12000;
         }
 
         GM_setValue(K.routerPresence, presence);
@@ -1004,23 +1033,19 @@
 
         if (quiet) return;
 
-        const manualRequest = reason === 'manual';
         const last = Number(GM_getValue(K.lastPasswordRequest, 0));
 
-        if (!manualRequest && now - last < PASSWORD_REQUEST_COOLDOWN) return;
+        if (now - last < PASSWORD_REQUEST_COOLDOWN) return;
 
         GM_setValue(K.lastPasswordRequest, now);
-
-        if (!manualRequest) {
-            notify(
-                'M7200 – נדרשת סיסמת ניהול',
-                'פתח את דף הנתב כדי להזין אותה.',
-                {
-                    timeout: 20000,
-                    onclick: openRouterTab
-                }
-            );
-        }
+        notify(
+            'M7200 – נדרשת סיסמת ניהול',
+            'פתח את דף הנתב כדי להזין אותה.',
+            {
+                timeout: 20000,
+                onclick: openRouterTab
+            }
+        );
 
         if (!isRouterManagementPageOpen()) {
             openRouterTab();
@@ -1414,30 +1439,39 @@
             !isAllowedRouterHost(location.hostname) ||
             typeof MutationObserver !== 'function') return;
 
+        let scanTimer = null;
+
         const observer = new MutationObserver(() => {
-            if (!isPotentialMiFiManagementPage()) return;
-            observer.disconnect();
+            // Coalesce frequent DOM updates; avoid repeatedly forcing innerText layout.
+            if (scanTimer !== null) return;
 
-            if (SAVED_ROUTER_ORIGIN) {
-                // A different MiFi origin needs explicit user confirmation.
-                showRouterSwitchPrompt();
-                return;
-            }
+            scanTimer = setTimeout(() => {
+                scanTimer = null;
+                if (!isPotentialMiFiManagementPage()) return;
 
-            // First-time detection: reserve presence before publishing the
-            // router origin, then reload so the page initializes as a router UI.
-            GM_setValue(K.routerPresence, {__opening: Date.now()});
-            GM_setValue(K.history, []);
-            GM_setValue(K.alarm, {stage: 0, wasCharging: false});
-            GM_setValue(K.snooze, null);
-            GM_setValue(K.alert, null);
-            GM_setValue(K.dismissed, '');
-            GM_setValue(K.lastStatus, null);
-            GM_setValue(K.routerFingerprint, '');
-            GM_setValue(K.compatibilityState, null);
-            GM_setValue(K.panelDismissed, '');
-            GM_setValue(K.routerBase, location.origin);
-            location.reload();
+                observer.disconnect();
+
+                if (SAVED_ROUTER_ORIGIN) {
+                    // A different MiFi origin needs explicit user confirmation.
+                    showRouterSwitchPrompt();
+                    return;
+                }
+
+                // First-time detection: reserve presence before publishing the
+                // router origin, then reload so the page initializes as a router UI.
+                GM_setValue(K.routerPresence, {__opening: Date.now()});
+                GM_setValue(K.history, []);
+                GM_setValue(K.alarm, {stage: 0, wasCharging: false});
+                GM_setValue(K.snooze, null);
+                GM_setValue(K.alert, null);
+                GM_setValue(K.dismissed, '');
+                GM_setValue(K.lastStatus, null);
+                GM_setValue(K.routerFingerprint, '');
+                GM_setValue(K.compatibilityState, null);
+                GM_setValue(K.panelDismissed, '');
+                GM_setValue(K.routerBase, location.origin);
+                location.reload();
+            }, 500);
         });
 
         if (document.documentElement) {
@@ -1446,7 +1480,13 @@
                 subtree: true,
                 characterData: true
             });
-            setTimeout(() => observer.disconnect(), 30000);
+            setTimeout(() => {
+                observer.disconnect();
+                if (scanTimer !== null) {
+                    clearTimeout(scanTimer);
+                    scanTimer = null;
+                }
+            }, 30000);
         }
     }
 
