@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.1
+// @version      1.5.2
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
-// @homepageURL  https://github.com/HAKOL-MILEMALA/M7200CarAlert
-// @supportURL   https://github.com/HAKOL-MILEMALA/M7200CarAlert/issues
-// @downloadURL  https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js
-// @updateURL    https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js
+// @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
+// @supportURL   https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/issues
+// @downloadURL  https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js
+// @updateURL    https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @match        https://*/*
 // @include    /^http:\/\/(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2})(?::\d+)?\/.*$/
 // @match        http://tplinkmifi.net/*
@@ -897,7 +897,7 @@
             'לא נכללו בו סיסמת ניהול, כתובת IP מקומית, שם רשת Wi-Fi, כתובת MAC או IMEI.'
         ];
 
-        const issue = new URL('https://github.com/HAKOL-MILEMALA/M7200CarAlert/issues/new');
+        const issue = new URL('https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/issues/new');
         issue.searchParams.set('title', title);
         issue.searchParams.set('body', lines.join('\n'));
 
