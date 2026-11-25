@@ -31,6 +31,12 @@ The script declares several common router IPs and TP-Link local hostnames in `@c
 
 The userscript stores the router address, battery history, alert state and router management password in Tampermonkey's local storage. The password is **not encrypted by the userscript itself**; it is used for router authentication and is not included in compatibility reports. The userscript code contains no analytics, tracking, or automatic upload of battery data to a remote server. Tampermonkey separately contacts GitHub for script updates. A compatibility report is opened only after the user clicks the report button; it is a pre-filled issue draft that the user must review and submit manually. It contains model/firmware information and the test result, but excludes the password, local IP address, Wi-Fi name, MAC address and IMEI.
 
+### Using the router web interface
+
+While a router management tab is open, automatic battery polling is paused. Some MiFi firmware allows only one management session, so background polling could otherwise disconnect the web UI while you change settings. Polling resumes automatically after you leave the router interface. An explicitly requested compatibility check still performs one API login, so run it before changing settings or after you finish working in the router UI.
+
+The password/compatibility panel no longer opens on every router page visit or refresh. It appears for first-time setup or when credentials are needed. After closing it, reopen it from the Tampermonkey menu using **Open TP-Link router battery panel**.
+
 The script uses Tampermonkey `@updateURL` and `@downloadURL` metadata for automatic update checks.
 
 See [README_HE.md](README_HE.md) for the full setup guide and [SUPPORTED_ROUTERS.md](SUPPORTED_ROUTERS.md) for current evidence.
