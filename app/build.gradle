@@ -41,10 +41,10 @@ android {
             }
         }
         buildTypes {
-            debug {
-                // Every cloud build uses the same protected key so Android can
-                // install future APK updates over the currently installed app.
+            release {
+                // All distributed APKs use one protected key for in-place updates.
                 signingConfig signingConfigs.stable
+                minifyEnabled false
             }
         }
     }
