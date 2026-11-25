@@ -1,8 +1,8 @@
 /* eslint-disable userscripts/avoid-regexp-include -- Regex is required to match private LAN IPv4 ranges; @match cannot express IP subnets. */
 // ==UserScript==
-// @name         התראת סוללה ל-TP-Link M7200
+// @name         התראת סוללה ל-TP-Link
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.10
+// @version      2.0.0
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -38,7 +38,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.10';
+    const SCRIPT_VERSION = '2.0.0';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -56,15 +56,6 @@
             value === 'tplinkmifi.net' ||
             value === 'tplinkwifi.net' ||
             value === 'tplinkmodem.net';
-    }
-
-    // Legacy versions used 192.168.0.1 as their fixed router address.
-    // Migrate only when a saved password exists and no router origin was saved.
-    if (
-        !GM_getValue(ROUTER_STORAGE_KEY, '') &&
-        GM_getValue('m7200_password', '')
-    ) {
-        GM_setValue(ROUTER_STORAGE_KEY, 'http://192.168.0.1');
     }
 
     function isPotentialMiFiManagementPage() {
@@ -127,7 +118,7 @@
 
     // Mark a router UI as open immediately, before the rest of the script initializes.
     if (IS_ROUTER_UI_PAGE) {
-        const key = 'm7200_router_presence_v2';
+        const key = 'tplink_mifi_router_presence_v2';
         const current = GM_getValue(key, {});
         const presence = current && typeof current === 'object' && !Array.isArray(current)
             ? {...current}
@@ -142,16 +133,16 @@
         ).replace(/\/+$/, '');
 
         if (!previousHost) {
-            // First-time discovery only; legacy installations are migrated above.
-            GM_setValue('m7200_history', []);
-            GM_setValue('m7200_alarm_state', {stage: 0, wasCharging: false});
-            GM_setValue('m7200_snooze', null);
-            GM_setValue('m7200_last_alert', null);
-            GM_setValue('m7200_dismissed_alert', '');
-            GM_setValue('m7200_last_status', null);
+            // First-time discovery initializes fresh monitoring state.
+            GM_setValue('tplink_mifi_history', []);
+            GM_setValue('tplink_mifi_alarm_state', {stage: 0, wasCharging: false});
+            GM_setValue('tplink_mifi_snooze', null);
+            GM_setValue('tplink_mifi_last_alert', null);
+            GM_setValue('tplink_mifi_dismissed_alert', '');
+            GM_setValue('tplink_mifi_last_status', null);
             GM_setValue('tplink_mifi_router_fingerprint', '');
             GM_setValue('tplink_mifi_compatibility_state', null);
-            GM_setValue('m7200_panel_dismissed_origin', '');
+            GM_setValue('tplink_mifi_panel_dismissed_origin', '');
             GM_setValue(ROUTER_STORAGE_KEY, location.origin);
         }
     }
@@ -197,27 +188,26 @@
     const ROUTER_PRESENCE_INTERVAL = 15 * 1000;
 
     const K = {
-        password: 'm7200_password',
+        password: 'tplink_mifi_password',
         routerBase: ROUTER_STORAGE_KEY,
         routerFingerprint: 'tplink_mifi_router_fingerprint',
         compatibilityTicket: 'tplink_mifi_compatibility_ticket',
         compatibilityHandledTicket: 'tplink_mifi_compatibility_handled_ticket',
         compatibilityState: 'tplink_mifi_compatibility_state',
-        passwordTicket: 'm7200_password_ticket',
-        passwordRequest: 'm7200_password_request',
-        lastPasswordRequest: 'm7200_last_password_request',
-        routerPresence: 'm7200_router_presence_v2',
-        routerPresenceLegacy: 'm7200_router_presence',
-        panelDismissed: 'm7200_panel_dismissed_origin',
-        lock: 'm7200_monitor_lock',
-        alarm: 'm7200_alarm_state',
-        snooze: 'm7200_snooze',
-        alert: 'm7200_last_alert',
-        dismissed: 'm7200_dismissed_alert',
-        history: 'm7200_history',
-        focusAt: 'm7200_focus_at',
-        lastError: 'm7200_last_error',
-        lastStatus: 'm7200_last_status'
+        passwordTicket: 'tplink_mifi_password_ticket',
+        passwordRequest: 'tplink_mifi_password_request',
+        lastPasswordRequest: 'tplink_mifi_last_password_request',
+        routerPresence: 'tplink_mifi_router_presence_v2',
+        panelDismissed: 'tplink_mifi_panel_dismissed_origin',
+        lock: 'tplink_mifi_monitor_lock',
+        alarm: 'tplink_mifi_alarm_state',
+        snooze: 'tplink_mifi_snooze',
+        alert: 'tplink_mifi_last_alert',
+        dismissed: 'tplink_mifi_dismissed_alert',
+        history: 'tplink_mifi_history',
+        focusAt: 'tplink_mifi_focus_at',
+        lastError: 'tplink_mifi_last_error',
+        lastStatus: 'tplink_mifi_last_status'
     };
 
     const INSTANCE_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -958,12 +948,6 @@
     function isRouterManagementPageOpen() {
         const now = Date.now();
 
-        // Compatibility with a router tab that is still running version 1.5.5.
-        const legacy = Number(GM_getValue(K.routerPresenceLegacy, 0));
-        if (legacy > 0 && now >= legacy && now - legacy < ROUTER_PRESENCE_TTL) {
-            return true;
-        }
-
         const presence = readRouterPresenceMap();
         return Object.values(presence).some(value => {
             const timestamp = Number(value);
@@ -1039,7 +1023,7 @@
 
         GM_setValue(K.lastPasswordRequest, now);
         notify(
-            'M7200 – נדרשת סיסמת ניהול',
+            'TP-Link MiFi – נדרשת סיסמת ניהול',
             'פתח את דף הנתב כדי להזין אותה.',
             {
                 timeout: 20000,
@@ -1056,7 +1040,7 @@
         if (!IS_ROUTER_PAGE || pwHost || pwLauncherHost) return;
 
         pwLauncherHost = document.createElement('div');
-        pwLauncherHost.id = 'm7200-password-launcher';
+        pwLauncherHost.id = 'tplink-mifi-password-launcher';
         pwLauncherHost.style.cssText =
             'all:initial;position:fixed;z-index:2147483646;bottom:18px;left:18px;';
         pwLauncherShadow = pwLauncherHost.attachShadow({mode: 'closed'});
@@ -1334,7 +1318,7 @@
 
         if (!pwHost) {
             pwHost = document.createElement('div');
-            pwHost.id = 'm7200-password-host';
+            pwHost.id = 'tplink-mifi-password-host';
             pwHost.style.cssText =
                 'all:initial;position:fixed;z-index:2147483647;top:18px;left:50%;transform:translateX(-50%);';
 
@@ -1409,7 +1393,7 @@
                 K.passwordTicket, K.passwordRequest, K.lastPasswordRequest,
                 K.lock, K.alarm, K.snooze, K.alert, K.dismissed,
                 K.history, K.lastError, K.lastStatus, K.panelDismissed,
-                K.focusAt, K.routerPresenceLegacy
+                K.focusAt
             ];
             keysToClear.forEach(key => GM_deleteValue(key));
 
@@ -1808,7 +1792,7 @@
 
             toastAlertId = alert.id;
             toastHost = document.createElement('div');
-            toastHost.id = 'm7200-battery-alert-host';
+            toastHost.id = 'tplink-mifi-battery-alert-host';
 
             toastHost.style.cssText =
                 'all:initial;position:fixed;z-index:2147483647;top:18px;right:18px;';
@@ -1868,14 +1852,14 @@
 
         if (stage >= 2 || !recentlyFocused) {
             const title = stage >= 2
-                ? `🚨 M7200 – סוללה דחופה (${level}%)`
-                : `🔋 M7200 – סוללה חלשה (${level}%)`;
+                ? `🚨 TP-Link MiFi – סוללה דחופה (${level}%)`
+                : `🔋 TP-Link MiFi – סוללה חלשה (${level}%)`;
 
             const etaLine = etaSentence(level, eta);
             const body = etaLine || 'זמן משוער לכיבוי עדיין לא זמין';
 
             notify(title, body, {
-                tag: 'm7200-battery-alert',
+                tag: 'tplink-mifi-battery-alert',
                 timeout: 30000,
                 silent: false,
                 onclick: () => {
@@ -2136,7 +2120,7 @@
         if (now - previous > 15 * 60 * 1000) {
             GM_setValue(K.lastError, now);
             notify(
-                'M7200 – בעיית ניטור',
+                'TP-Link MiFi – בעיית ניטור',
                 error.message || String(error)
             );
         }
