@@ -38,7 +38,6 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.3';
     const SCRIPT_VERSION = '1.5.4';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
