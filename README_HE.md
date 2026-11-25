@@ -2,17 +2,17 @@
 
 ## גרסת אפליקציה
 
-**[⬇️ הורדת האפליקציה (APK)](https://github.com/HAKOL-MILEMALA/M7200CarAlert/releases/latest/download/M7200-Car-Alert.apk)**
+**[⬇️ הורדת האפליקציה (APK)](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases/latest/download/M7200-Car-Alert.apk)**
 
 זהו קישור הפצה קבוע. שם קובץ ה-APK נשמר בכוונה לצורך תאימות לקישור הישן, אך האפליקציה עצמה כבר מיועדת לנתבי TP-Link MiFi ולא רק ל-M7200.
 
-[לכל הגרסאות והיסטוריית העדכונים ב-GitHub](https://github.com/HAKOL-MILEMALA/M7200CarAlert/releases)
+[לכל הגרסאות והיסטוריית העדכונים ב-GitHub](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases)
 
 ## גרסת דפדפן – TP-Link MiFi באמצעות Tampermonkey
 
 **[התקנת Tampermonkey ל-Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)**
 
-**[התקנת סקריפט TP-Link MiFi בלחיצה אחת](https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js)**
+**[התקנת סקריפט TP-Link MiFi בלחיצה אחת](https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js)**
 
 גרסת הדפדפן מאפשרת לנטר נתבי TP-Link MiFi שמשתמשים בפרוטוקול המקומי שהסקריפט מכיר. היא אינה מבטיחה תאימות לכל נתב TP-Link: דגמים מסוימים משתמשים בממשק ניהול או בפרוטוקול אחר.
 
@@ -27,7 +27,7 @@
 
 ### התקנה והפעלה
 1. התקן את [Tampermonkey ל-Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo).
-2. פתח את [קישור ההתקנה הישיר של הסקריפט](https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js).
+2. פתח את [קישור ההתקנה הישיר של הסקריפט](https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js).
 3. בחלון Tampermonkey לחץ על Install / התקן.
 4. חבר את המחשב ל-Wi-Fi של נתב ה-MiFi.
 5. פתח ידנית את ממשק הניהול המקומי של הנתב, למשל דרך כתובת השער שלו או `http://tplinkmifi.net`. הסקריפט מזהה את כתובת הניהול המקומית ושומר אותה.
