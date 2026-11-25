@@ -2,6 +2,14 @@ plugins {
     id 'com.android.application'
 }
 
+import java.util.Properties
+
+def signingProperties = new Properties()
+def signingPropertiesFile = rootProject.file("signing/keystore.properties")
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.withInputStream { signingProperties.load(it) }
+}
+
 android {
     namespace 'il.hakolmilemala.m7200caralert'
     compileSdk 35
@@ -10,12 +18,34 @@ android {
         applicationId 'il.hakolmilemala.m7200caralert'
         minSdk 26
         targetSdk 32
-        versionCode 2
-        versionName '1.0.1'
+        versionCode 3
+        versionName '1.0.2'
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    if (signingPropertiesFile.exists()) {
+        signingConfigs {
+            stable {
+                storeFile rootProject.file(signingProperties.getProperty("storeFile"))
+                storePassword signingProperties.getProperty("storePassword")
+                keyAlias signingProperties.getProperty("keyAlias")
+                keyPassword signingProperties.getProperty("keyPassword")
+            }
+        }
+        buildTypes {
+            debug {
+                // Every cloud build uses the same protected key so Android can
+                // install future APK updates over the currently installed app.
+                signingConfig signingConfigs.stable
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.15.0'
 }
