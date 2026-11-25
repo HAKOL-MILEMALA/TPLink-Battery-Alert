@@ -24,7 +24,7 @@ import androidx.core.content.FileProvider;
 import java.io.File;
 
 public final class MainActivity extends Activity {
-    private static final String GITHUB_URL = "https://github.com/HAKOL-MILEMALA/M7200CarAlert";
+    private static final String GITHUB_URL = "https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert";
     private static final String UPDATE_PREFS = "app_updates";
     private static final String KEY_LAST_UPDATE_CHECK = "last_update_check";
     private static final String KEY_PENDING_INSTALL = "pending_install_path";
@@ -288,7 +288,7 @@ public final class MainActivity extends Activity {
     private void openCompatibilityReport() {
         if (lastRouterReportBody.isEmpty()) return;
         try {
-            Uri issue = Uri.parse("https://github.com/HAKOL-MILEMALA/M7200CarAlert/issues/new")
+            Uri issue = Uri.parse("https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/issues/new")
                     .buildUpon()
                     .appendQueryParameter("title", lastRouterReportTitle)
                     .appendQueryParameter("body", lastRouterReportBody)
