@@ -1,6 +1,12 @@
 name: Process router compatibility reports
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/compatibility-reports.yml'
+      - '.github/scripts/update_compatibility_reports.py'
+  workflow_dispatch:
   issues:
     types: [opened, edited, reopened]
 
@@ -13,8 +19,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Validate Python aggregation script
+        run: python3 -m py_compile .github/scripts/update_compatibility_reports.py
+
   process:
-    if: contains(github.event.issue.body, '<!-- tplink-battery-report:v2')
+    if: github.event_name == 'issues' && contains(github.event.issue.body, '<!-- tplink-battery-report:v2')
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
