@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.7
+// @version      1.5.8
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -38,7 +38,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.7';
+    const SCRIPT_VERSION = '1.5.8';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -228,6 +228,8 @@
     let pwShadow = null;
     let pwChecking = false;
     let pwTimeout = null;
+    let pwLauncherHost = null;
+    let pwLauncherShadow = null;
     let routerSwitchHost = null;
     let routerSwitchShadow = null;
 
@@ -1025,6 +1027,33 @@
         }
     }
 
+    function createPasswordPanelLauncher() {
+        if (!IS_ROUTER_PAGE || pwHost || pwLauncherHost) return;
+
+        pwLauncherHost = document.createElement('div');
+        pwLauncherHost.id = 'm7200-password-launcher';
+        pwLauncherHost.style.cssText =
+            'all:initial;position:fixed;z-index:2147483646;bottom:18px;left:18px;';
+        pwLauncherShadow = pwLauncherHost.attachShadow({mode: 'closed'});
+
+        const style = makeElement('style');
+        style.textContent =
+            'button{font:600 12px Arial,sans-serif;background:#fff;color:#202124;border:1px solid #dadce0;border-radius:18px;padding:8px 11px;box-shadow:0 2px 10px #0002;cursor:pointer}' +
+            'button:hover{background:#f8f9fa}';
+
+        const button = makeElement('button', '', '🔋 הגדרות ניטור');
+        button.type = 'button';
+        button.title = 'פתיחת חלונית בדיקת הסוללה והגדרות הנתב';
+        button.addEventListener('click', () => {
+            showPasswordPanel(
+                GM_getValue(K.passwordRequest, null) || {reason: 'manual'}
+            );
+        });
+
+        pwLauncherShadow.replaceChildren(style, button);
+        (document.documentElement || document.body).appendChild(pwLauncherHost);
+    }
+
     function removePasswordPanel() {
         clearTimeout(pwTimeout);
         pwChecking = false;
@@ -1038,6 +1067,7 @@
 
         pwHost = null;
         pwShadow = null;
+        createPasswordPanelLauncher();
     }
 
     function submitPassword() {
@@ -1254,6 +1284,12 @@
     function showPasswordPanel(request, failedNow = false) {
         if (!IS_ROUTER_PAGE) return;
 
+        if (pwLauncherHost) {
+            pwLauncherHost.remove();
+            pwLauncherHost = null;
+            pwLauncherShadow = null;
+        }
+
         if (!pwHost) {
             pwHost = document.createElement('div');
             pwHost.id = 'm7200-password-host';
@@ -1426,6 +1462,8 @@
             showPasswordPanel(request);
         } else if (!hasPassword && !dismissedHere) {
             showPasswordPanel({reason: 'missing'});
+        } else {
+            createPasswordPanelLauncher();
         }
     }
 
