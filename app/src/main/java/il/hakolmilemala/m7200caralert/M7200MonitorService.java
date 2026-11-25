@@ -305,10 +305,10 @@ public final class M7200MonitorService extends Service {
 
         try {
             UpdateChecker.UpdateInfo update = UpdateChecker.checkForUpdate();
-            prefs.edit().putLong(
-                    "background_next_check",
-                    now + 24L * 60L * 60L * 1000L
-            ).apply();
+            prefs.edit()
+                    .putLong("background_next_check", now + 24L * 60L * 60L * 1000L)
+                    .putLong("last_update_check", now)
+                    .apply();
 
             NotificationManager manager =
                     (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
