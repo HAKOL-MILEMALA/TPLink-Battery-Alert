@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.3
+// @version      1.5.4
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -29,6 +29,7 @@
 // @grant        GM_notification
 // @grant        GM_addValueChangeListener
 // @grant        GM_openInTab
+// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // @noframes
 // ==/UserScript==
@@ -37,7 +38,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.3';
+    const SCRIPT_VERSION = '1.5.4';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -85,6 +86,7 @@
             GM_setValue('m7200_last_status', null);
             GM_setValue('tplink_mifi_router_fingerprint', '');
             GM_setValue('tplink_mifi_compatibility_state', null);
+            GM_setValue('m7200_panel_dismissed_origin', '');
         }
         GM_setValue(ROUTER_STORAGE_KEY, location.origin);
     }
@@ -127,6 +129,8 @@
     const AUTH_FAILURES_BEFORE_ASK = 2;
     const PASSWORD_REQUEST_COOLDOWN = 15 * 60 * 1000;
     const ROUTER_TAB_ABSENT_AFTER = 90 * 1000;
+    const ROUTER_PRESENCE_TTL = 20 * 1000;
+    const ROUTER_PRESENCE_INTERVAL = 5 * 1000;
 
     const K = {
         password: 'm7200_password',
@@ -138,6 +142,7 @@
         passwordRequest: 'm7200_password_request',
         lastPasswordRequest: 'm7200_last_password_request',
         routerPresence: 'm7200_router_presence',
+        panelDismissed: 'm7200_panel_dismissed_origin',
         lock: 'm7200_monitor_lock',
         alarm: 'm7200_alarm_state',
         snooze: 'm7200_snooze',
@@ -736,7 +741,7 @@
             batteryPercent: Number.isFinite(Number(batteryPercent)) ? Number(batteryPercent) : null,
             charging: charging === true,
             time: Date.now(),
-            scriptVersion: '1.5.1'
+            scriptVersion: SCRIPT_VERSION
         });
     }
 
@@ -794,7 +799,31 @@
             );
         } finally {
             compatibilityCheckInProgress = false;
+            if (isRouterManagementPageOpen()) {
+                loseLeadership();
+            }
         }
+    }
+
+    function isRouterManagementPageOpen() {
+        const lastSeen = Number(GM_getValue(K.routerPresence, 0));
+        return lastSeen > 0 && Date.now() - lastSeen < ROUTER_PRESENCE_TTL;
+    }
+
+    function hasPendingCompatibilityCheck() {
+        const ticket = Number(GM_getValue(K.compatibilityTicket, 0));
+        return Boolean(ticket && ticket !== handledCompatibilityTicket);
+    }
+
+    function handlePendingCompatibilityCheck() {
+        if (!isLeader || compatibilityCheckInProgress) return false;
+
+        const ticket = Number(GM_getValue(K.compatibilityTicket, 0));
+        if (!ticket || ticket === handledCompatibilityTicket) return false;
+
+        handledCompatibilityTicket = ticket;
+        runCompatibilityCheck();
+        return true;
     }
 
     // ======================== הזנת סיסמה בדף הנתב ========================
@@ -849,6 +878,11 @@
     function removePasswordPanel() {
         clearTimeout(pwTimeout);
         pwChecking = false;
+
+        if (IS_ROUTER_PAGE) {
+            GM_setValue(K.panelDismissed, location.origin);
+            GM_setValue(K.passwordRequest, null);
+        }
 
         if (pwHost) pwHost.remove();
 
@@ -1082,14 +1116,28 @@
         };
 
         beat();
-        setInterval(beat, 5000);
+        setInterval(beat, ROUTER_PRESENCE_INTERVAL);
 
+        // Keep a short presence grace period on reload/navigation so another
+        // tab does not restart polling while the router UI is being reloaded.
         window.addEventListener('pagehide', () => {
-            GM_setValue(K.routerPresence, 0);
+            GM_setValue(K.routerPresence, Date.now());
         });
 
         const request = GM_getValue(K.passwordRequest, null);
-        showPasswordPanel(request || {reason: 'settings'});
+        const requestIsFresh = request &&
+            Number(request.time) > Date.now() - PASSWORD_REQUEST_COOLDOWN;
+        const hasPassword = Boolean(GM_getValue(K.password, ''));
+        const dismissedHere = GM_getValue(K.panelDismissed, '') === location.origin;
+
+        // Do not cover the router UI on every visit. Show only for first-time
+        // setup or a recent explicit password request. The panel can be opened
+        // later from the Tampermonkey menu.
+        if (requestIsFresh) {
+            showPasswordPanel(request);
+        } else if (!hasPassword && !dismissedHere) {
+            showPasswordPanel({reason: 'missing'});
+        }
     }
 
     // ======================== הערכת זמן לכיבוי ========================
@@ -1742,6 +1790,11 @@
     }
 
     async function poll() {
+        if (IS_ROUTER_PAGE || isRouterManagementPageOpen()) {
+            loseLeadership();
+            return;
+        }
+
         if (!isLeader || pollInProgress || compatibilityCheckInProgress || !ownsLock()) return;
 
         pollInProgress = true;
@@ -1784,6 +1837,17 @@
         lastBeat = now;
 
         try {
+            const routerUiOpen = isRouterManagementPageOpen();
+            const manualCheckPending = hasPendingCompatibilityCheck();
+
+            // The router firmware supports only one management session.
+            // Suspend background polling while its web UI is open, except for
+            // a compatibility check explicitly requested by the user.
+            if (routerUiOpen && !manualCheckPending && !compatibilityCheckInProgress) {
+                loseLeadership();
+                return;
+            }
+
             markFocused();
 
             let lock = GM_getValue(K.lock, null);
@@ -1852,6 +1916,8 @@
 
             isLeader = true;
 
+            if (handlePendingCompatibilityCheck()) return;
+
             if (!wasLeader || gap > RESUME_GAP) {
                 pollNow();
             } else if (!pollTimer && !pollInProgress) {
@@ -1877,23 +1943,42 @@
         }
     });
 
+    GM_addValueChangeListener(K.routerPresence, () => {
+        if (IS_ROUTER_PAGE || compatibilityCheckInProgress) return;
+        if (isRouterManagementPageOpen()) {
+            loseLeadership();
+        } else {
+            heartbeat();
+        }
+    });
+
     GM_addValueChangeListener(K.routerBase, () => {
         if (IS_ROUTER_PAGE) return;
         session = null;
-        if (isLeader) pollNow();
+        if (isLeader && !isRouterManagementPageOpen()) pollNow();
     });
 
     GM_addValueChangeListener(K.compatibilityTicket, (_key, _oldValue, ticket) => {
+        if (IS_ROUTER_PAGE) return;
         const value = Number(ticket || 0);
-        if (!isLeader || !value || value === handledCompatibilityTicket) return;
-        handledCompatibilityTicket = value;
-        runCompatibilityCheck();
+        if (!value || value === handledCompatibilityTicket) return;
+
+        if (isLeader) {
+            handlePendingCompatibilityCheck();
+        } else {
+            heartbeat();
+        }
     });
 
     GM_addValueChangeListener(K.compatibilityState, () => {
         if (IS_ROUTER_PAGE && pwHost) {
             pwChecking = false;
             renderPasswordPanel('settings');
+
+            const state = GM_getValue(K.compatibilityState, null);
+            if (state && ['LIVE_SUCCESS', 'PROTOCOL_MISMATCH'].includes(state.result)) {
+                GM_setValue(K.passwordRequest, null);
+            }
         }
     });
 
@@ -1902,7 +1987,7 @@
         if (Number(GM_getValue(K.compatibilityTicket, 0)) > handledCompatibilityTicket) return;
 
         session = null;
-        pollNow();
+        if (!isRouterManagementPageOpen()) pollNow();
     });
 
     GM_addValueChangeListener(
@@ -1914,7 +1999,6 @@
 
             if (!request) {
                 pwChecking = false;
-                if (pwHost) renderPasswordPanel('settings');
                 return;
             }
 
@@ -1947,6 +2031,18 @@
 
     window.addEventListener('pagehide', clearFocused);
 
+    if (typeof GM_registerMenuCommand === 'function') {
+        GM_registerMenuCommand('פתח חלונית בדיקת נתב TP-Link', () => {
+            if (IS_ROUTER_PAGE) {
+                showPasswordPanel(
+                    GM_getValue(K.passwordRequest, null) || {reason: 'manual'}
+                );
+            } else {
+                requestPassword('manual');
+            }
+        });
+    }
+
     window.addEventListener('online', () => {
         if (!isLeader) return;
 
@@ -1974,6 +2070,8 @@
         return;
     }
 
-    setTimeout(heartbeat, startupDelay);
-    setInterval(heartbeat, HEARTBEAT_INTERVAL);
+    if (!IS_ROUTER_PAGE) {
+        setTimeout(heartbeat, startupDelay);
+        setInterval(heartbeat, HEARTBEAT_INTERVAL);
+    }
 })();
