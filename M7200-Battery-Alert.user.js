@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.0
+// @version      1.5.1
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/M7200CarAlert
@@ -64,7 +64,21 @@
     }
 
     const IS_ROUTER_PAGE = isRouterManagementPage();
-    if (IS_ROUTER_PAGE) GM_setValue(ROUTER_STORAGE_KEY, location.origin);
+    if (IS_ROUTER_PAGE) {
+        const previousHost = String(GM_getValue(ROUTER_STORAGE_KEY, '') || '').replace(/\/+$/, '');
+        if (previousHost !== location.origin) {
+            GM_deleteValue('m7200_password');
+            GM_setValue('m7200_history', []);
+            GM_setValue('m7200_alarm_state', {stage: 0, wasCharging: false});
+            GM_setValue('m7200_snooze', null);
+            GM_setValue('m7200_last_alert', null);
+            GM_setValue('m7200_dismissed_alert', '');
+            GM_setValue('m7200_last_status', null);
+            GM_setValue('tplink_mifi_router_fingerprint', '');
+            GM_setValue('tplink_mifi_compatibility_state', null);
+        }
+        GM_setValue(ROUTER_STORAGE_KEY, location.origin);
+    }
 
     function getRouterBase() {
         const stored = String(GM_getValue(ROUTER_STORAGE_KEY, '') || '').trim();
@@ -108,6 +122,7 @@
     const K = {
         password: 'm7200_password',
         routerBase: ROUTER_STORAGE_KEY,
+        routerFingerprint: 'tplink_mifi_router_fingerprint',
         compatibilityTicket: 'tplink_mifi_compatibility_ticket',
         compatibilityState: 'tplink_mifi_compatibility_state',
         passwordTicket: 'm7200_password_ticket',
@@ -660,6 +675,38 @@
         };
     }
 
+
+    function resetRouterBatteryCycle() {
+        GM_setValue(K.history, []);
+        GM_setValue(K.alarm, {stage: 0, wasCharging: false});
+        GM_setValue(K.snooze, null);
+        GM_setValue(K.alert, null);
+        GM_setValue(K.dismissed, '');
+        closeToast();
+    }
+
+    function trackRouterFingerprint(identity) {
+        const values = [identity.model, identity.hardwareVersion, identity.firmwareVersion]
+            .map(value => String(value || '').trim())
+            .filter(value => value && value !== 'לא דווח' && value !== 'לא דווחה');
+
+        if (values.length === 0) return;
+
+        const fingerprint = [
+            identity.model || '',
+            identity.hardwareVersion || '',
+            identity.firmwareVersion || ''
+        ].join('|');
+
+        const previous = String(GM_getValue(K.routerFingerprint, '') || '');
+
+        if (previous && previous !== fingerprint) {
+            resetRouterBatteryCycle();
+        }
+
+        GM_setValue(K.routerFingerprint, fingerprint);
+    }
+
     function safeReportValue(value, fallback = 'לא דווח') {
         let clean = String(value == null ? '' : value)
             .replace(/[\r\n\t]/g, ' ')
@@ -680,7 +727,7 @@
             batteryPercent: Number.isFinite(Number(batteryPercent)) ? Number(batteryPercent) : null,
             charging: charging === true,
             time: Date.now(),
-            scriptVersion: '1.5.0'
+            scriptVersion: '1.5.1'
         });
     }
 
@@ -1443,6 +1490,7 @@
 
         const level = Number(battery.voltage);
         const identity = routerIdentity(status);
+        trackRouterFingerprint(identity);
 
         const asBool = (value, fallback = false) => {
             if (
