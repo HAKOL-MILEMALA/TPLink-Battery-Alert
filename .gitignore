@@ -6,3 +6,8 @@ local.properties
 .idea/
 .DS_Store
 Thumbs.db
+
+# Private signing materials must never be committed
+/signing/
+*.jks
+*.keystore
