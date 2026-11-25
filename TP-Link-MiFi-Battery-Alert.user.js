@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.2
+// @version      1.5.3
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -9,10 +9,18 @@
 // @downloadURL  https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @updateURL    https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @match        https://*/*
+// eslint-disable-next-line userscripts/avoid-regexp-include -- Regex is required to match private LAN IPv4 ranges; @match cannot express IP subnets.
 // @include    /^http:\/\/(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2})(?::\d+)?\/.*$/
 // @match        http://tplinkmifi.net/*
 // @match        http://tplinkwifi.net/*
 // @match        http://tplinkmodem.net/*
+// @connect      192.168.0.1
+// @connect      192.168.1.1
+// @connect      192.168.8.1
+// @connect      10.0.0.1
+// @connect      tplinkmifi.net
+// @connect      tplinkwifi.net
+// @connect      tplinkmodem.net
 // @connect      *
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -29,6 +37,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
+    const SCRIPT_VERSION = '1.5.3';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -889,7 +898,7 @@
             '- דגם: ' + safeReportValue(profile.model),
             '- גרסת חומרה: ' + safeReportValue(profile.hardwareVersion),
             '- גרסת קושחה: ' + safeReportValue(profile.firmwareVersion),
-            '- גרסת הסקריפט: 1.5.0',
+            '- גרסת הסקריפט: ' + SCRIPT_VERSION,
             '- אחוז סוללה בבדיקה: ' + (profile.batteryPercent == null ? 'לא התקבל' : profile.batteryPercent + '%'),
             '- פרטים: ' + safeReportValue(profile.details, 'ללא פירוט'),
             '',
