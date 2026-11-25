@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 
 /** Checks public GitHub Releases and downloads a verified APK update. */
 public final class UpdateChecker {
-    private static final String REPOSITORY = "HAKOL-MILEMALA/M7200CarAlert";
+    private static final String REPOSITORY = "HAKOL-MILEMALA/TPLink-Battery-Alert";
     private static final String RELEASE_API =
             "https://api.github.com/repos/" + REPOSITORY + "/releases/latest";
     private static final String RELEASE_DOWNLOAD_PREFIX =
