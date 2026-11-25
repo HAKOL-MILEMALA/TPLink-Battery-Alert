@@ -21,7 +21,7 @@ The userscript warns at 15% battery and raises an urgent alert at 10%. It estima
 
 The browser version performs a live compatibility check using the router's local API. It supports only devices that successfully complete the login flow and return a valid battery percentage; TP-Link branding or tpMiFi-app support alone is not enough to establish protocol compatibility. A report button opens a pre-filled GitHub issue draft for successful tests or protocol mismatches. Reports are never submitted automatically.
 
-For first-time setup, open the router's local HTTP management page once so the script can save its local address. Keep Chrome open with at least one HTTPS tab while monitoring.
+For first-time setup, open the router's local HTTP management page once so the script can save its local address. Keep Chrome open with at least one HTTPS tab while monitoring. Existing installations that already have a saved router password but no saved router address are migrated to the legacy default `http://192.168.0.1`.
 
 ### Privacy and Tampermonkey's cross-origin permission prompt
 
@@ -35,7 +35,7 @@ The userscript stores the router address, battery history, alert state and route
 
 While a router management tab is open, automatic battery polling is paused. Some MiFi firmware allows only one management session, so background polling could otherwise disconnect the web UI while you change settings. Polling resumes automatically after you leave the router interface. An explicitly requested compatibility check made while the router UI is open is queued and runs once after the router UI closes.
 
-After a router has been configured, only its exact saved origin is treated as the management interface. A different MiFi interface is not adopted automatically. If one is detected at another local address, the userscript asks for confirmation; choosing **Switch to this router** replaces the saved origin, clears the old router password and resets battery history and alerts. It does not silently erase credentials just because another local page looks like a TP-Link device.
+After a router has been configured, only its exact saved origin is treated as the management interface. The local `tplinkmifi.net` hostname is also treated as an alias for an already configured private IPv4 router; it does not replace the saved address or clear the password. A different TP-Link MiFi interface is not adopted automatically. If one is detected at another local address, the userscript asks for confirmation; choosing **Switch to this router** replaces the saved origin, clears the old router password and resets battery history and alerts. A delayed-rendering page is checked through a debounced MutationObserver (500 ms) to avoid rescanning the DOM on every mutation.
 
 The password/compatibility panel no longer opens on every router page visit or refresh. It appears for first-time setup or when credentials are needed. After closing it, a small **Battery settings** button remains in the lower-left corner of the router page and reopens the panel. From that panel you can also replace the saved router password; leave the field blank to test the existing password. The userscript does not add Tampermonkey menu commands.
 
