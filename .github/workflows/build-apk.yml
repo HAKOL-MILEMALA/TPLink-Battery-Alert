@@ -80,8 +80,8 @@ jobs:
           test -s signing/m7200-release.jks
           test -s signing/keystore.properties
 
-      - name: Build signed debug APK
-        run: gradle --no-daemon clean assembleDebug
+      - name: Build signed Release APK
+        run: gradle --no-daemon clean assembleRelease
 
       - name: Prepare APK
         id: apk
@@ -94,7 +94,7 @@ jobs:
             exit 1
           fi
           APK_NAME="M7200-Car-Alert-${VERSION_NAME}.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK_NAME"
+          cp app/build/outputs/apk/release/app-release.apk "$APK_NAME"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
           ls -lh "$APK_NAME"
