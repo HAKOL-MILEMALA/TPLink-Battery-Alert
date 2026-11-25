@@ -4,17 +4,17 @@ This repository provides two ways to monitor compatible TP-Link MiFi routers:
 
 ## Android app
 
-- [Download latest APK](https://github.com/HAKOL-MILEMALA/M7200CarAlert/releases/latest/download/M7200-Car-Alert.apk)
+- [Download latest APK](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases/latest/download/M7200-Car-Alert.apk)
 - [Hebrew documentation](README_HE.md)
 - [Router compatibility evidence and status](SUPPORTED_ROUTERS.md)
-- [GitHub releases](https://github.com/HAKOL-MILEMALA/M7200CarAlert/releases)
+- [GitHub releases](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases)
 
 The Android app performs a live, read-only compatibility check against the connected router. It reports a device as supported only after it successfully reads a valid battery percentage. Compatibility reports open a pre-filled GitHub issue draft; the user must review and submit it.
 
 ## Browser userscript (Chrome + Tampermonkey)
 
 - [Install Tampermonkey for Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
-- [Install TP-Link MiFi Battery Alert userscript](https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js)
+- [Install TP-Link MiFi Battery Alert userscript](https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js)
 
 The userscript warns at 15% battery and raises an urgent alert at 10%. It estimates time to a 5% safety threshold when enough history is available, and supports manual and automatic snoozing.
 
