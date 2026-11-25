@@ -137,6 +137,7 @@
         routerBase: ROUTER_STORAGE_KEY,
         routerFingerprint: 'tplink_mifi_router_fingerprint',
         compatibilityTicket: 'tplink_mifi_compatibility_ticket',
+        compatibilityHandledTicket: 'tplink_mifi_compatibility_handled_ticket',
         compatibilityState: 'tplink_mifi_compatibility_state',
         passwordTicket: 'm7200_password_ticket',
         passwordRequest: 'm7200_password_request',
@@ -176,7 +177,10 @@
     let rejectedPassword = null;
     let freshPassword = false;
     let compatibilityCheckInProgress = false;
-    let handledCompatibilityTicket = Number(GM_getValue(K.compatibilityTicket, 0));
+    let handledCompatibilityTicket = Number(GM_getValue(
+        K.compatibilityHandledTicket,
+        GM_getValue(K.compatibilityTicket, 0)
+    ));
     let handledTicket = Number(GM_getValue(K.passwordTicket, 0));
 
     let toastHost = null;
@@ -812,16 +816,32 @@
 
     function hasPendingCompatibilityCheck() {
         const ticket = Number(GM_getValue(K.compatibilityTicket, 0));
-        return Boolean(ticket && ticket !== handledCompatibilityTicket);
+        const handled = Number(GM_getValue(
+            K.compatibilityHandledTicket,
+            handledCompatibilityTicket
+        ));
+        handledCompatibilityTicket = handled;
+        return Boolean(ticket && ticket !== handled);
     }
 
     function handlePendingCompatibilityCheck() {
         if (!isLeader || compatibilityCheckInProgress) return false;
 
         const ticket = Number(GM_getValue(K.compatibilityTicket, 0));
-        if (!ticket || ticket === handledCompatibilityTicket) return false;
+        const handled = Number(GM_getValue(
+            K.compatibilityHandledTicket,
+            handledCompatibilityTicket
+        ));
 
+        if (!ticket || ticket === handled) {
+            handledCompatibilityTicket = handled;
+            return false;
+        }
+
+        // Persist the ticket globally so other tabs will not repeat this
+        // one-time user-requested check after the leadership lock expires.
         handledCompatibilityTicket = ticket;
+        GM_setValue(K.compatibilityHandledTicket, ticket);
         runCompatibilityCheck();
         return true;
     }
@@ -1924,6 +1944,17 @@
                 lockToken = candidateToken;
             }
 
+            // Recheck after the asynchronous lock-election delay. The router
+            // UI may have opened while this tab was waiting to acquire the lock.
+            if (
+                isRouterManagementPageOpen() &&
+                !hasPendingCompatibilityCheck() &&
+                !compatibilityCheckInProgress
+            ) {
+                loseLeadership();
+                return;
+            }
+
             isLeader = true;
 
             if (handlePendingCompatibilityCheck()) return;
@@ -1968,10 +1999,19 @@
         if (isLeader && !isRouterManagementPageOpen()) pollNow();
     });
 
+    GM_addValueChangeListener(K.compatibilityHandledTicket, (_key, _oldValue, ticket) => {
+        handledCompatibilityTicket = Number(ticket || 0);
+    });
+
     GM_addValueChangeListener(K.compatibilityTicket, (_key, _oldValue, ticket) => {
         if (IS_ROUTER_PAGE) return;
         const value = Number(ticket || 0);
-        if (!value || value === handledCompatibilityTicket) return;
+        const handled = Number(GM_getValue(
+            K.compatibilityHandledTicket,
+            handledCompatibilityTicket
+        ));
+        handledCompatibilityTicket = handled;
+        if (!value || value === handled) return;
 
         if (isLeader) {
             handlePendingCompatibilityCheck();
@@ -1994,7 +2034,7 @@
 
     GM_addValueChangeListener(K.passwordTicket, () => {
         if (!isLeader) return;
-        if (Number(GM_getValue(K.compatibilityTicket, 0)) > handledCompatibilityTicket) return;
+        if (hasPendingCompatibilityCheck()) return;
 
         session = null;
         if (!isRouterManagementPageOpen()) pollNow();
