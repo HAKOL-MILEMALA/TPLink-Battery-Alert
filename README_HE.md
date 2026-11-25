@@ -11,6 +11,7 @@
 ## גרסת דפדפן – ניטור M7200 באמצעות Tampermonkey
 
 **[התקנת Tampermonkey ל-Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)**
+
 **[התקנת סקריפט M7200 בלחיצה אחת](https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/M7200-Battery-Alert.user.js)**
 
 בנוסף לאפליקציית Android, אפשר לנטר את סוללת M7200 ישירות מהמחשב באמצעות סקריפט דפדפן. גרסת הדפדפן מיועדת כרגע ל-M7200 בלבד; היא אינה מעידה על תמיכה בכל דגמי TP-Link MiFi.
