@@ -156,9 +156,10 @@ public final class M7200MonitorService extends Service {
             showLowBatteryAlert(battery.percent);
         }
 
-        // A quiet daily GitHub check runs while monitoring is active.
-        // When internet is unavailable, retry after six hours; the local
-        // M7200 battery monitoring remains independent of GitHub.
+        // A quiet GitHub check is shared with the app screen and runs
+        // automatically no more than once every seven days.
+        // A failed online check also waits until the next weekly window;
+        // local M7200 battery monitoring remains independent of GitHub.
         maybeCheckForAppUpdate();
     }
 
@@ -296,19 +297,19 @@ public final class M7200MonitorService extends Service {
     private void maybeCheckForAppUpdate() {
         SharedPreferences prefs = getSharedPreferences("app_updates", MODE_PRIVATE);
         long now = System.currentTimeMillis();
-        long nextCheck = prefs.getLong("background_next_check", 0L);
-        if (now < nextCheck) return;
+        long lastCheck = prefs.getLong("last_update_check", 0L);
+        long weeklyInterval = 7L * 24L * 60L * 60L * 1000L;
 
-        // Set a retry window before the request, so a missing internet link
-        // does not cause a GitHub request on every 60-second battery poll.
-        prefs.edit().putLong("background_next_check", now + 6L * 60L * 60L * 1000L).apply();
+        // The activity and service share one timestamp so they do not
+        // independently query GitHub on the same weekly cycle.
+        if (now - lastCheck < weeklyInterval) return;
+
+        // Record the attempt before networking. If internet is unavailable,
+        // the next automatic attempt will be no earlier than one week later.
+        prefs.edit().putLong("last_update_check", now).apply();
 
         try {
             UpdateChecker.UpdateInfo update = UpdateChecker.checkForUpdate();
-            prefs.edit()
-                    .putLong("background_next_check", now + 24L * 60L * 60L * 1000L)
-                    .putLong("last_update_check", now)
-                    .apply();
 
             NotificationManager manager =
                     (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
@@ -344,6 +345,7 @@ public final class M7200MonitorService extends Service {
             prefs.edit().putString("last_notified_update_version", update.version).apply();
         } catch (Exception ignored) {
             // A failed online check must never interfere with battery monitoring.
+            // The weekly timestamp prevents repeated requests while offline.
         }
     }
 
