@@ -9,7 +9,10 @@
 // @downloadURL  https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @updateURL    https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @match        https://*/*
-// @match        http://*/*
+// @include    /^http:\/\/(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2})(?::\d+)?\/.*$/
+// @match        http://tplinkmifi.net/*
+// @match        http://tplinkwifi.net/*
+// @match        http://tplinkmodem.net/*
 // @connect      *
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
