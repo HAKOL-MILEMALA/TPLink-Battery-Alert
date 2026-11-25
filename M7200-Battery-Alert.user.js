@@ -74,7 +74,7 @@
         lastStatus: 'm7200_last_status'
     };
 
-    const INSTANCE_ID = \`${Date.now()}-${Math.random().toString(36).slice(2)}\`;
+    const INSTANCE_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
@@ -393,10 +393,10 @@
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'POST',
-                url: \`${ROUTER}/cgi-bin/${endpoint}\`,
+                url: `${ROUTER}/cgi-bin/${endpoint}`,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Referer': \`${ROUTER}/\`,
+                    'Referer': `${ROUTER}/`,
                     'Origin': ROUTER,
                     'User-Agent': 'okhttp/3.11.0'
                 },
@@ -407,7 +407,7 @@
                     if (response.status >= 200 && response.status < 300) {
                         resolve(response.responseText);
                     } else {
-                        reject(new NetworkError(\`הנתב החזיר HTTP ${response.status}\`));
+                        reject(new NetworkError(`הנתב החזיר HTTP ${response.status}`));
                     }
                 },
 
@@ -432,8 +432,8 @@
         const sequence = Number(activeSession.seq) + data.length;
 
         const signatureText = isLogin
-            ? \`key=${activeSession.key}&iv=${activeSession.iv}&h=${activeSession.hash}&s=${sequence}\`
-            : \`h=${activeSession.hash}&s=${sequence}\`;
+            ? `key=${activeSession.key}&iv=${activeSession.iv}&h=${activeSession.hash}&s=${sequence}`
+            : `h=${activeSession.hash}&s=${sequence}`;
 
         return {
             data,
@@ -588,7 +588,7 @@
     // ======================== הזנת סיסמה בדף הנתב ========================
     function openRouterTab() {
         try {
-            GM_openInTab(\`${ROUTER}/\`, {
+            GM_openInTab(`${ROUTER}/`, {
                 active: true,
                 insert: true,
                 setParent: true
@@ -699,7 +699,7 @@
         const showForm = status === 'ask' || status === 'saved';
 
         const style = makeElement('style');
-        style.textContent = \`
+        style.textContent = `
             *{box-sizing:border-box}
             .panel{direction:rtl;width:min(380px,calc(100vw - 36px));font:14px Arial,sans-serif;background:#fff;color:#202124;border:1px solid #dadce0;border-top:5px solid ${accent};border-radius:12px;box-shadow:0 8px 28px #0003;padding:16px}
             .head{font-size:16px;font-weight:700;margin-bottom:8px}
@@ -710,7 +710,7 @@
             button{font:600 13px Arial;border:0;border-radius:7px;padding:9px 14px;cursor:pointer}
             #save{background:#1967d2;color:#fff}
             #close{background:#e8eaed;color:#202124}
-        \`;
+        `;
 
         const panel = makeElement('div', 'panel');
         panel.setAttribute('role', 'dialog');
@@ -914,7 +914,7 @@
         if (minutes < 1) return 'פחות מדקה';
         if (minutes < 1.5) return 'כדקה';
 
-        return \`כ-${Math.max(1, Math.round(minutes))} דקות\`;
+        return `כ-${Math.max(1, Math.round(minutes))} דקות`;
     }
 
     function etaSentence(level, minutes) {
@@ -924,7 +924,7 @@
 
         const estimate = formatEta(minutes);
 
-        return estimate ? \`זמן משוער לכיבוי: ${estimate}\` : '';
+        return estimate ? `זמן משוער לכיבוי: ${estimate}` : '';
     }
 
     // ======================== חלונית ההתראה ========================
@@ -1045,14 +1045,14 @@
 
         const style = makeElement('style');
 
-        style.textContent = \`
+        style.textContent = `
             *{box-sizing:border-box}
             .panel{direction:rtl;width:min(340px,calc(100vw - 36px));font:14px Arial,sans-serif;background:#fff;color:#202124;border:1px solid #dadce0;border-top:5px solid ${urgent ? '#c5221f' : '#e37400'};border-radius:12px;box-shadow:0 8px 28px #0003;padding:15px}
             .head{font-size:16px;font-weight:700;margin-bottom:7px}
             .pct{font-size:30px;font-weight:800;color:${urgent ? '#c5221f' : '#b06000'};margin:4px 0}
             .eta{font-size:13px;font-weight:600;line-height:1.45;background:#f1f3f4;border-radius:7px;padding:7px 9px;margin:7px 0 11px}
             button{font:600 13px Arial;border:0;border-radius:7px;padding:9px 15px;background:#1967d2;color:white;cursor:pointer}
-        \`;
+        `;
 
         const panel = makeElement('div', 'panel');
 
@@ -1065,7 +1065,7 @@
             urgent ? '🚨 התראת סוללה דחופה' : '🔋 התראת סוללה'
         ));
 
-        panel.appendChild(makeElement('div', 'pct', \`${level}%\`));
+        panel.appendChild(makeElement('div', 'pct', `${level}%`));
 
         if (eta) {
             panel.appendChild(makeElement('div', 'eta', eta));
@@ -1136,7 +1136,7 @@
         const now = Date.now();
 
         const alert = {
-            id: \`${now}-${Math.random().toString(36).slice(2)}\`,
+            id: `${now}-${Math.random().toString(36).slice(2)}`,
             level,
             triggerLevel: level,
             stage,
@@ -1152,8 +1152,8 @@
 
         if (stage >= 2 || !recentlyFocused) {
             const title = stage >= 2
-                ? \`🚨 M7200 – סוללה דחופה (${level}%)\`
-                : \`🔋 M7200 – סוללה חלשה (${level}%)\`;
+                ? `🚨 M7200 – סוללה דחופה (${level}%)`
+                : `🔋 M7200 – סוללה חלשה (${level}%)`;
 
             const etaLine = etaSentence(level, eta);
             const body = etaLine || 'זמן משוער לכיבוי עדיין לא זמין';
@@ -1527,7 +1527,7 @@
                 }
 
                 const candidateToken =
-                    \`${INSTANCE_ID}-${Date.now()}-${Math.random().toString(36).slice(2)}\`;
+                    `${INSTANCE_ID}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
                 GM_setValue(K.lock, {
                     owner: INSTANCE_ID,
