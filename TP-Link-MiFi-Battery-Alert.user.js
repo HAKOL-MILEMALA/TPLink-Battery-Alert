@@ -128,7 +128,7 @@
 
     const AUTH_FAILURES_BEFORE_ASK = 2;
     const PASSWORD_REQUEST_COOLDOWN = 15 * 60 * 1000;
-    const ROUTER_TAB_ABSENT_AFTER = 90 * 1000;
+    const ROUTER_TAB_ABSENT_AFTER = 25 * 1000;
     const ROUTER_PRESENCE_TTL = 20 * 1000;
     const ROUTER_PRESENCE_INTERVAL = 5 * 1000;
 
@@ -853,20 +853,23 @@
 
         if (quiet) return;
 
+        const manualRequest = reason === 'manual';
         const last = Number(GM_getValue(K.lastPasswordRequest, 0));
 
-        if (now - last < PASSWORD_REQUEST_COOLDOWN) return;
+        if (!manualRequest && now - last < PASSWORD_REQUEST_COOLDOWN) return;
 
         GM_setValue(K.lastPasswordRequest, now);
 
-        notify(
-            'M7200 – נדרשת סיסמת ניהול',
-            'פתח את דף הנתב כדי להזין אותה.',
-            {
-                timeout: 20000,
-                onclick: openRouterTab
-            }
-        );
+        if (!manualRequest) {
+            notify(
+                'M7200 – נדרשת סיסמת ניהול',
+                'פתח את דף הנתב כדי להזין אותה.',
+                {
+                    timeout: 20000,
+                    onclick: openRouterTab
+                }
+            );
+        }
 
         const presence = Number(GM_getValue(K.routerPresence, 0));
 
@@ -1080,6 +1083,8 @@
             'הדיווח ייפתח כטיוטה ב-GitHub ולא יישלח בלי אישורך. הדוח אינו כולל סיסמה, כתובת IP, שם רשת Wi-Fi או מזהי מכשיר.'));
         panel.appendChild(makeElement('div', 'hint',
             'הסיסמה נשמרת באחסון Tampermonkey. הסקריפט אינו מצפין אותה בעצמו ואינו שולח אותה לשירות חיצוני.'));
+        panel.appendChild(makeElement('div', 'hint',
+            'הניטור האוטומטי מושהה כל עוד ממשק הנתב פתוח. בדיקת תאימות יזומה מתחברת פעם אחת ועלולה להוציא את ממשק הניהול מההתחברות; מומלץ לבצע אותה לפני שינוי הגדרות או לאחר סיום העבודה.'));
 
         pwShadow.replaceChildren(style, panel);
         const field = pwShadow.getElementById('pw');
