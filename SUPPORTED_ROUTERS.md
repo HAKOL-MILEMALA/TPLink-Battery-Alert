@@ -35,6 +35,8 @@ The status response may also expose `deviceInfo.model`, `deviceInfo.firmwareVers
 ## Sources
 
 - [TP-Link tpMiFi on Google Play – official supported models](https://play.google.com/store/apps/details?id=com.tplink.tpmifi)
+- [TP-Link tpMiFi on Apple App Store – official compatible model list, including M7010](https://apps.apple.com/us/app/tpmifi/id999189880)
+- [Independent M7200/M7000 API client – mt-ks/tp-link-m7200-api](https://github.com/mt-ks/tp-link-m7200-api)
 - [TP-Link FAQ – Mobile Wi-Fi web-management models](https://www.tp-link.com/us/support/faq/1647/)
 - [Independent protocol documentation – tested on M7350 EU V9.0 / firmware 9.0.5](https://github.com/gioelerosana/tplink-battery-monitor/blob/main/docs/protocol.md)
 - [Independent TP-Link MiFi monitor – tested on M7350 V9 and notes M7000/M7200 API family](https://github.com/gioelerosana/tplink-battery-monitor)
