@@ -1,6 +1,6 @@
 # TP-Link MiFi Battery Alert – התראת סוללה לנתבי TP-Link ניידים
 
-## הורדה ישירה – הגרסה האחרונה
+## גרסת אפליקציה
 
 **[⬇️ הורדת האפליקציה (APK)](https://github.com/HAKOL-MILEMALA/M7200CarAlert/releases/latest/download/M7200-Car-Alert.apk)**
 
