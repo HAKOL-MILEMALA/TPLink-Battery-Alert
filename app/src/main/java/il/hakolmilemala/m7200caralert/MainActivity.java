@@ -27,7 +27,7 @@ public final class MainActivity extends Activity {
     private static final String UPDATE_PREFS = "app_updates";
     private static final String KEY_LAST_UPDATE_CHECK = "last_update_check";
     private static final String KEY_PENDING_INSTALL = "pending_install_path";
-    private static final long AUTO_CHECK_INTERVAL = 24L * 60L * 60L * 1000L;
+    private static final long AUTO_CHECK_INTERVAL = 7L * 24L * 60L * 60L * 1000L;
     private static final int REQUEST_INSTALL_PERMISSION = 4701;
 
     private EditText passwordInput;
@@ -78,7 +78,7 @@ public final class MainActivity extends Activity {
             passwordInput.setHint("הסיסמה כבר שמורה. אפשר להשאיר ריק.");
         }
 
-        updateStatusText.setText("בדיקת עדכונים אוטומטית מתבצעת מדי פעם, ואפשר לבדוק גם בלחיצה.");
+        updateStatusText.setText("בדיקת עדכונים אוטומטית מתבצעת לכל היותר פעם בשבוע. אפשר לבדוק ידנית בכל רגע.");
         if (getIntent() != null && getIntent().getBooleanExtra("check_updates_now", false)) {
             checkForUpdates(true);
         } else {
