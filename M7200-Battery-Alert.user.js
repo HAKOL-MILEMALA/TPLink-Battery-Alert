@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.6
+// @version      1.5.7
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -38,7 +38,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.6';
+    const SCRIPT_VERSION = '1.5.7';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -724,11 +724,18 @@
     function routerIdentity(status) {
         const deviceInfo = status && status.deviceInfo && typeof status.deviceInfo === 'object'
             ? status.deviceInfo
-            : {};
+            : status && status.device_info && typeof status.device_info === 'object'
+                ? status.device_info
+                : status && status.device && typeof status.device === 'object'
+                    ? status.device
+                    : {};
         return {
-            model: firstNonEmpty(deviceInfo, ['model', 'modelName', 'deviceModel']) || 'לא דווח',
-            hardwareVersion: firstNonEmpty(deviceInfo, ['hardwareVersion', 'hardwareVer', 'hwVersion', 'hardware_version']) || 'לא דווחה',
-            firmwareVersion: firstNonEmpty(deviceInfo, ['firmwareVersion', 'firmwareVer', 'softwareVersion', 'fwVersion']) || 'לא דווחה'
+            model: firstNonEmpty(deviceInfo, ['model', 'modelName', 'deviceModel']) ||
+                firstNonEmpty(status, ['model', 'modelName', 'deviceModel']) || 'לא דווח',
+            hardwareVersion: firstNonEmpty(deviceInfo, ['hardwareVersion', 'hardwareVer', 'hwVersion', 'hardware_version']) ||
+                firstNonEmpty(status, ['hardwareVersion', 'hardwareVer', 'hwVersion', 'hardware_version']) || 'לא דווחה',
+            firmwareVersion: firstNonEmpty(deviceInfo, ['firmwareVersion', 'firmwareVer', 'softwareVersion', 'fwVersion']) ||
+                firstNonEmpty(status, ['firmwareVersion', 'firmwareVer', 'softwareVersion', 'fwVersion']) || 'לא דווחה'
         };
     }
 
@@ -801,7 +808,9 @@
             statusFields: safeReportValue(responseFieldNames(status)),
             batteryFields: safeReportValue(responseFieldNames(battery)),
             details: safeReportValue(details, ''),
-            batteryPercent: Number.isFinite(Number(batteryPercent)) ? Number(batteryPercent) : null,
+            batteryPercent: batteryPercent != null && Number.isFinite(Number(batteryPercent))
+                ? Number(batteryPercent)
+                : null,
             charging: charging === true,
             time: Date.now(),
             scriptVersion: SCRIPT_VERSION
@@ -1266,7 +1275,24 @@
     }
 
     function showRouterSwitchPrompt() {
-        if (!IS_ROUTER_SWITCH_CANDIDATE || routerSwitchHost) return;
+        const isCandidateNow = Boolean(
+            SAVED_ROUTER_ORIGIN &&
+            location.origin !== SAVED_ROUTER_ORIGIN &&
+            isPotentialMiFiManagementPage()
+        );
+        if (!isCandidateNow || routerSwitchHost) return;
+
+        // A newly detected candidate page is also a management UI: pause API
+        // traffic until the user either switches or closes this tab.
+        if (!IS_ROUTER_UI_PAGE) {
+            updateRouterPresence(true);
+            const beat = () => updateRouterPresence(true);
+            const timer = setInterval(beat, ROUTER_PRESENCE_INTERVAL);
+            window.addEventListener('pagehide', () => {
+                clearInterval(timer);
+                updateRouterPresence(false);
+            }, {once: true});
+        }
 
         routerSwitchHost = document.createElement('div');
         routerSwitchHost.id = 'tplink-mifi-switch-host';
@@ -1328,6 +1354,47 @@
 
         routerSwitchShadow.replaceChildren(style, panel);
         (document.documentElement || document.body).appendChild(routerSwitchHost);
+    }
+
+    function watchForDelayedMiFiIdentification() {
+        if (IS_ROUTER_UI_PAGE || location.protocol !== 'http:' ||
+            !isAllowedRouterHost(location.hostname) ||
+            typeof MutationObserver !== 'function') return;
+
+        const observer = new MutationObserver(() => {
+            if (!isPotentialMiFiManagementPage()) return;
+            observer.disconnect();
+
+            if (SAVED_ROUTER_ORIGIN) {
+                // A different MiFi origin needs explicit user confirmation.
+                showRouterSwitchPrompt();
+                return;
+            }
+
+            // First-time detection: reserve presence before publishing the
+            // router origin, then reload so the page initializes as a router UI.
+            GM_setValue(K.routerPresence, {__opening: Date.now()});
+            GM_setValue(K.history, []);
+            GM_setValue(K.alarm, {stage: 0, wasCharging: false});
+            GM_setValue(K.snooze, null);
+            GM_setValue(K.alert, null);
+            GM_setValue(K.dismissed, '');
+            GM_setValue(K.lastStatus, null);
+            GM_setValue(K.routerFingerprint, '');
+            GM_setValue(K.compatibilityState, null);
+            GM_setValue(K.panelDismissed, '');
+            GM_setValue(K.routerBase, location.origin);
+            location.reload();
+        });
+
+        if (document.documentElement) {
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                characterData: true
+            });
+            setTimeout(() => observer.disconnect(), 30000);
+        }
     }
 
     function initRouterPage({showPanel = IS_ROUTER_PAGE} = {}) {
@@ -1982,7 +2049,10 @@
 
     function handlePollError(error) {
         if (error instanceof ProtocolMismatchError) {
-            markProtocolMismatch(null, error.message || 'פרוטוקול הנתב אינו תואם.');
+            const current = GM_getValue(K.compatibilityState, null);
+            if (!current || current.result !== 'PROTOCOL_MISMATCH') {
+                markProtocolMismatch(null, error.message || 'פרוטוקול הנתב אינו תואם.');
+            }
             return NORMAL_INTERVAL;
         }
 
@@ -2330,6 +2400,8 @@
 
     if (IS_ROUTER_SWITCH_CANDIDATE) {
         showRouterSwitchPrompt();
+    } else {
+        watchForDelayedMiFiIdentification();
     }
 
     if (
