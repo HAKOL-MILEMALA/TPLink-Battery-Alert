@@ -194,6 +194,16 @@ public final class MainActivity extends Activity {
                         updateStatusText.setText(manual
                                 ? "האפליקציה מעודכנת ✅ (גרסה " + BuildConfig.VERSION_NAME + ")."
                                 : "לא נמצאה גרסה חדשה. האפליקציה מעודכנת.");
+                    } else if ("1.0.1".equals(BuildConfig.VERSION_NAME) && "1.0.2".equals(found.version)) {
+                        // The first APK was signed with a temporary CI debug key.
+                        // Android cannot replace that installation with the new stable signing key.
+                        downloadUpdateButton.setVisibility(View.GONE);
+                        updateStatusText.setText(
+                                "נמצאה גרסה 1.0.2. זו החלפה חד-פעמית למפתח חתימה קבוע. " +
+                                "Android לא יאפשר עדכון ישיר מעל גרסה 1.0.1.\\n" +
+                                "יש להסיר את 1.0.1 ולהתקין את 1.0.2 מה-Releases ב-GitHub. " +
+                                "ההסרה מוחקת את סיסמת הנתב וההעדפות. לאחר מכן העדכונים יעבדו מתוך האפליקציה."
+                        );
                     } else {
                         downloadUpdateButton.setVisibility(View.VISIBLE);
                         downloadUpdateButton.setEnabled(true);
