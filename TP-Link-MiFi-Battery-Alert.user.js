@@ -67,7 +67,7 @@
     if (IS_ROUTER_PAGE) {
         const previousHost = String(GM_getValue(ROUTER_STORAGE_KEY, '') || '').replace(/\/+$/, '');
         if (previousHost !== location.origin) {
-            GM_deleteValue('m7200_password');
+            if (previousHost) GM_deleteValue('m7200_password');
             GM_setValue('m7200_history', []);
             GM_setValue('m7200_alarm_state', {stage: 0, wasCharging: false});
             GM_setValue('m7200_snooze', null);
