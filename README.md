@@ -35,7 +35,9 @@ The userscript stores the router address, battery history, alert state and route
 
 While a router management tab is open, automatic battery polling is paused. Some MiFi firmware allows only one management session, so background polling could otherwise disconnect the web UI while you change settings. Polling resumes automatically after you leave the router interface. An explicitly requested compatibility check made while the router UI is open is queued and runs once after the router UI closes.
 
-The password/compatibility panel no longer opens on every router page visit or refresh. It appears for first-time setup or when credentials are needed. After closing it, reopen it from the Tampermonkey menu using **Open TP-Link router battery panel**.
+After a router has been configured, only its exact saved origin is treated as the management interface. A different MiFi interface is not adopted automatically. If one is detected at another local address, the userscript asks for confirmation; choosing **Switch to this router** replaces the saved origin, clears the old router password and resets battery history and alerts. It does not silently erase credentials just because another local page looks like a TP-Link device.
+
+The password/compatibility panel no longer opens on every router page visit or refresh. It appears for first-time setup or when credentials are needed. After closing it, a small **Battery settings** button remains in the lower-left corner of the router page and reopens the panel. The userscript does not add Tampermonkey menu commands.
 
 The script uses Tampermonkey `@updateURL` and `@downloadURL` metadata for automatic update checks.
 
