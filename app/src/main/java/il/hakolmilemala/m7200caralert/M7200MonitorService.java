@@ -5,13 +5,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.content.SharedPreferences;
-import android.net.ConnectivityManager;
 import android.net.Network;
-import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.IBinder;
 
@@ -112,15 +109,16 @@ public final class M7200MonitorService extends Service {
     }
 
     private void pollOnce() throws Exception {
-        Network wifiNetwork = findWifiNetwork();
+        Network wifiNetwork = RouterNetworkHelper.findWifiNetwork(this);
         if (wifiNetwork == null) {
             saveStatus("המולטימדיה אינה מחוברת כרגע לרשת Wi-Fi. הניטור ממתין לחיבור.");
-            updateServiceNotification("ממתין לחיבור Wi-Fi של M7200");
+            updateServiceNotification("ממתין לחיבור Wi-Fi של הנתב");
             return;
         }
         // Force the HTTP requests through Wi-Fi even when Android considers
         // that network "no internet" or has another default network available.
         client.setWifiNetwork(wifiNetwork);
+        client.setRouterHost(RouterNetworkHelper.findRouterHost(this, wifiNetwork));
 
         String password = SecurePasswordStore.read(this);
         if (password == null || password.isEmpty()) {
@@ -148,7 +146,7 @@ public final class M7200MonitorService extends Service {
             if (manager != null) manager.cancel(NOTIFICATION_ALERT_ID);
         }
 
-        saveBattery(battery.percent, battery.charging);
+        saveBattery(battery);
         updateServiceNotification("ניטור פעיל • סוללה " + battery.percent + "%");
 
         if (!battery.charging && battery.percent <= WARNING_LEVEL && !alreadyAlerted) {
@@ -163,39 +161,23 @@ public final class M7200MonitorService extends Service {
         maybeCheckForAppUpdate();
     }
 
-    private Network findWifiNetwork() {
-        try {
-            ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (manager == null) return null;
-
-            // Prefer Android's active network when it is Wi-Fi.
-            Network active = manager.getActiveNetwork();
-            if (active != null) {
-                NetworkCapabilities activeCaps = manager.getNetworkCapabilities(active);
-                if (activeCaps != null && activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                    return active;
-                }
-            }
-
-            // Do not require NET_CAPABILITY_VALIDATED: the M7200 may have no
-            // internet access while its local management API is still reachable.
-            for (Network network : manager.getAllNetworks()) {
-                NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
-                if (capabilities != null &&
-                        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                    return network;
-                }
-            }
-        } catch (Exception ignored) {
-            // The next polling cycle will retry when connectivity is available.
-        }
-        return null;
+    private void saveBattery(M7200Client.BatteryStatus battery) {
+        String model = battery.model == null ? "" : battery.model.trim();
+        getSharedPreferences("router_profile", MODE_PRIVATE).edit()
+                .putString("model", model)
+                .putString("hardware_version", battery.hardwareVersion)
+                .putString("firmware_version", battery.firmwareVersion)
+                .putLong("last_checked", System.currentTimeMillis())
+                .putBoolean("compatible", true)
+                .apply();
+        String displayName = model.isEmpty() ? "TP-Link MiFi" : model;
+        saveStatus("מחובר ל-" + displayName + "\nסוללה: " + battery.percent + "%" +
+                (battery.charging ? " • בטעינה" : " • לא בטעינה"));
     }
 
-    private void saveBattery(int percent, boolean charging) {
-        String text = "מחובר ל-M7200\nסוללה: " + percent + "%" +
-                (charging ? " • בטעינה" : " • לא בטעינה");
-        saveStatus(text);
+    private String currentRouterName() {
+        String model = getSharedPreferences("router_profile", MODE_PRIVATE).getString("model", "");
+        return model == null || model.trim().isEmpty() ? "TP-Link MiFi" : model.trim();
     }
 
     private void saveStatus(String status) {
@@ -216,7 +198,7 @@ public final class M7200MonitorService extends Service {
         );
         return new Notification.Builder(this, CHANNEL_SERVICE)
                 .setSmallIcon(android.R.drawable.stat_sys_warning)
-                .setContentTitle("התראת סוללת M7200")
+                .setContentTitle("התראת סוללת TP-Link MiFi")
                 .setContentText(text)
                 .setContentIntent(pending)
                 .setOngoing(true)
@@ -241,10 +223,10 @@ public final class M7200MonitorService extends Service {
 
         Notification notification = new Notification.Builder(this, CHANNEL_ALERT)
                 .setSmallIcon(android.R.drawable.stat_sys_warning)
-                .setContentTitle("🔋 סוללת ה־M7200 חלשה")
+                .setContentTitle("🔋 סוללת " + currentRouterName() + " חלשה")
                 .setContentText("נותרו " + percent + "% סוללה. כדאי לחבר את המטען עכשיו.")
                 .setStyle(new Notification.BigTextStyle().bigText(
-                        "נותרו " + percent + "% סוללה בסטיק ה־TP-Link M7200. " +
+                        "נותרו " + percent + "% סוללה בנתב " + currentRouterName() + ". " +
                                 "כדאי לחבר אותו למטען לפני שייכבה."
                 ))
                 .setContentIntent(pending)

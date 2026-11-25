@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -36,6 +37,12 @@ public final class MainActivity extends Activity {
     private TextView updateStatusText;
     private Button checkUpdatesButton;
     private Button downloadUpdateButton;
+    private TextView routerCompatibilityText;
+    private Button checkRouterButton;
+    private Button reportRouterButton;
+    private boolean routerCheckInProgress = false;
+    private String lastRouterReportTitle = "";
+    private String lastRouterReportBody = "";
     private boolean updateCheckInProgress = false;
     private boolean updateDownloadInProgress = false;
     private UpdateChecker.UpdateInfo availableUpdate;
@@ -60,6 +67,9 @@ public final class MainActivity extends Activity {
         updateStatusText = findViewById(R.id.updateStatusText);
         checkUpdatesButton = findViewById(R.id.checkUpdatesButton);
         downloadUpdateButton = findViewById(R.id.downloadUpdateButton);
+        routerCompatibilityText = findViewById(R.id.routerCompatibilityText);
+        checkRouterButton = findViewById(R.id.checkRouterButton);
+        reportRouterButton = findViewById(R.id.reportRouterButton);
 
         Button startButton = findViewById(R.id.startButton);
         Button stopButton = findViewById(R.id.stopButton);
@@ -73,6 +83,8 @@ public final class MainActivity extends Activity {
         githubButton.setOnClickListener(v -> openGithub());
         checkUpdatesButton.setOnClickListener(v -> checkForUpdates(true));
         downloadUpdateButton.setOnClickListener(v -> downloadAndInstallUpdate());
+        checkRouterButton.setOnClickListener(v -> checkRouterCompatibility());
+        reportRouterButton.setOnClickListener(v -> openCompatibilityReport());
 
         if (SecurePasswordStore.hasPassword(this)) {
             passwordInput.setHint("הסיסמה כבר שמורה. אפשר להשאיר ריק.");
@@ -161,6 +173,129 @@ public final class MainActivity extends Activity {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL)));
         } catch (Exception error) {
             Toast.makeText(this, "לא הצלחתי לפתוח את GitHub.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void checkRouterCompatibility() {
+        if (routerCheckInProgress) return;
+        String password = passwordInput.getText().toString();
+        if (password.isEmpty()) {
+            try {
+                password = SecurePasswordStore.read(this);
+            } catch (Exception error) {
+                routerCompatibilityText.setText("לא הצלחתי לקרוא את הסיסמה השמורה. הזן את סיסמת הניהול ונסה שוב.");
+                return;
+            }
+        }
+        if (password == null || password.isEmpty()) {
+            routerCompatibilityText.setText("כדי לבדוק תאימות צריך להזין את סיסמת הניהול של הנתב. הבדיקה אינה משנה הגדרות.");
+            passwordInput.requestFocus();
+            return;
+        }
+        Network wifiNetwork = RouterNetworkHelper.findWifiNetwork(this);
+        if (wifiNetwork == null) {
+            routerCompatibilityText.setText("המולטימדיה אינה מחוברת כרגע לרשת Wi-Fi של הנתב. התחבר לרשת ה-MiFi ונסה שוב.");
+            return;
+        }
+        final String routerPassword = password;
+        final String routerHost = RouterNetworkHelper.findRouterHost(this, wifiNetwork);
+        routerCheckInProgress = true;
+        checkRouterButton.setEnabled(false);
+        reportRouterButton.setVisibility(View.GONE);
+        routerCompatibilityText.setText("מתחבר לנתב, מזהה דגם וקושחה ובודק אם ניתן לקרוא את הסוללה…");
+        new Thread(() -> {
+            M7200Client client = new M7200Client();
+            client.setWifiNetwork(wifiNetwork);
+            client.setRouterHost(routerHost);
+            try {
+                M7200Client.BatteryStatus result = client.readBattery(routerPassword);
+                String model = result.model.isEmpty() ? "לא דווח על ידי הנתב" : result.model;
+                String hardware = result.hardwareVersion.isEmpty() ? "לא דווחה" : result.hardwareVersion;
+                String firmware = result.firmwareVersion.isEmpty() ? "לא דווחה" : result.firmwareVersion;
+                getSharedPreferences("router_profile", MODE_PRIVATE).edit()
+                        .putString("model", result.model)
+                        .putString("hardware_version", result.hardwareVersion)
+                        .putString("firmware_version", result.firmwareVersion)
+                        .putLong("last_checked", System.currentTimeMillis())
+                        .putBoolean("compatible", true)
+                        .apply();
+                String message = "✅ הנתב תואם – קריאת הסוללה הצליחה.\n" +
+                        "דגם: " + model + "\n" +
+                        "גרסת חומרה: " + hardware + "\n" +
+                        "גרסת קושחה: " + firmware + "\n" +
+                        "קריאת סוללה: " + result.percent + "%" +
+                        (result.charging ? " • בטעינה" : "");
+                final String reportModel = model;
+                final String reportHardware = hardware;
+                final String reportFirmware = firmware;
+                runOnUiThread(() -> {
+                    routerCompatibilityText.setText(message);
+                    prepareCompatibilityReport("LIVE_SUCCESS", reportModel, reportHardware, reportFirmware,
+                            "התחברות הצליחה ונתוני הסוללה נקראו בהצלחה.");
+                    routerCheckInProgress = false;
+                    checkRouterButton.setEnabled(true);
+                });
+            } catch (Exception error) {
+                final String detail = safeReportValue(error.getMessage(), "לא התקבל פירוט נוסף");
+                getSharedPreferences("router_profile", MODE_PRIVATE).edit()
+                        .putLong("last_checked", System.currentTimeMillis())
+                        .putBoolean("compatible", false)
+                        .apply();
+                runOnUiThread(() -> {
+                    if (error instanceof M7200Client.PasswordRejectedException) {
+                        routerCompatibilityText.setText("🔒 הנתב הגיב, אך דחה את סיסמת הניהול.\nזה לא אומר שהדגם אינו נתמך. בדוק את הסיסמה ונסה שוב.");
+                        reportRouterButton.setVisibility(View.GONE);
+                    } else if (error instanceof M7200Client.ProtocolMismatchException) {
+                        routerCompatibilityText.setText("⚠️ הנתב הגיב, אך ממשק התקשורת או מבנה נתוני הסוללה אינם תואמים לפרוטוקול הנוכחי.\nהדגם הזה אינו נתמך כרגע בגרסה הנוכחית. אפשר לשלוח דוח כדי לבדוק הוספת תמיכה.\nפרטים: " + detail);
+                        prepareCompatibilityReport("PROTOCOL_MISMATCH", "לא זוהה", "לא ידועה", "לא ידועה", detail);
+                    } else {
+                        routerCompatibilityText.setText("לא ניתן לקבוע כרגע אם הנתב נתמך.\nבדוק שהמולטימדיה מחוברת ל-Wi-Fi של הנתב ונסה שוב.\nפרטים: " + detail);
+                        reportRouterButton.setVisibility(View.GONE);
+                    }
+                    routerCheckInProgress = false;
+                    checkRouterButton.setEnabled(true);
+                });
+            }
+        }, "TP-Link-router-compatibility").start();
+    }
+
+    private void prepareCompatibilityReport(String result, String model,
+                                            String hardware, String firmware, String details) {
+        String safeModel = safeReportValue(model, "לא זוהה");
+        String safeHardware = safeReportValue(hardware, "לא ידועה");
+        String safeFirmware = safeReportValue(firmware, "לא ידועה");
+        String safeDetails = safeReportValue(details, "ללא פירוט");
+        lastRouterReportTitle = "בדיקת תאימות נתב: " + safeModel;
+        lastRouterReportBody =
+                "### דוח בדיקת תאימות TP-Link MiFi\n\n" +
+                "- תוצאת בדיקה: " + result + "\n" +
+                "- דגם: " + safeModel + "\n" +
+                "- גרסת חומרה: " + safeHardware + "\n" +
+                "- גרסת קושחה: " + safeFirmware + "\n" +
+                "- גרסת האפליקציה: " + BuildConfig.VERSION_NAME + "\n" +
+                "- פרטים: " + safeDetails + "\n\n" +
+                "הדוח נוצר מתוך בדיקת קריאה בלבד. לא נכללו בו סיסמת ניהול, כתובת IP מקומית, שם רשת Wi-Fi, כתובת MAC או IMEI.\n";
+        reportRouterButton.setVisibility(View.VISIBLE);
+    }
+
+    private static String safeReportValue(String value, String fallback) {
+        if (value == null || value.trim().isEmpty()) return fallback;
+        String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
+        if (clean.length() > 140) clean = clean.substring(0, 140);
+        return clean;
+    }
+
+    private void openCompatibilityReport() {
+        if (lastRouterReportBody.isEmpty()) return;
+        try {
+            Uri issue = Uri.parse("https://github.com/HAKOL-MILEMALA/M7200CarAlert/issues/new")
+                    .buildUpon()
+                    .appendQueryParameter("title", lastRouterReportTitle)
+                    .appendQueryParameter("body", lastRouterReportBody)
+                    .build();
+            startActivity(new Intent(Intent.ACTION_VIEW, issue));
+        } catch (Exception error) {
+            Toast.makeText(this, "לא הצלחתי לפתוח טופס דיווח ב-GitHub.", Toast.LENGTH_LONG).show();
         }
     }
 

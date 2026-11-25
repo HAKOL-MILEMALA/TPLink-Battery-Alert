@@ -11,7 +11,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="התראת סוללת M7200"
+        android:label="התראת סוללת TP-Link MiFi"
         android:icon="@drawable/ic_app"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"

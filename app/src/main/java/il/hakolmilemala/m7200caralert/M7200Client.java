@@ -24,7 +24,7 @@ import java.security.KeyFactory;
 
 /** Minimal read-only client for the M7200 status API. */
 public final class M7200Client {
-    private static final String ROUTER = "http://192.168.0.1";
+    private volatile String routerBaseUrl = "http://192.168.0.1";
     private static final int CONNECT_TIMEOUT_MS = 8000;
     private static final int READ_TIMEOUT_MS = 10000;
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -38,20 +38,40 @@ public final class M7200Client {
         this.wifiNetwork = network;
     }
 
+    /** Use the connected MiFi gateway instead of assuming a fixed router IP. */
+    public void setRouterHost(String host) {
+        String value = host == null ? "" : host.trim();
+        value = value.replaceFirst("^https?://", "").replaceAll("/+$", "");
+        if (value.isEmpty() || value.contains("/") || value.contains(" ")) value = "192.168.0.1";
+        routerBaseUrl = "http://" + value;
+    }
+
     public static final class PasswordRejectedException extends Exception {
         PasswordRejectedException(String message, Throwable cause) { super(message, cause); }
         PasswordRejectedException(String message) { super(message); }
+    }
+
+    public static final class ProtocolMismatchException extends Exception {
+        ProtocolMismatchException(String message) { super(message); }
+        ProtocolMismatchException(String message, Throwable cause) { super(message, cause); }
     }
 
     public static final class BatteryStatus {
         public final int percent;
         public final boolean charging;
         public final boolean batteryConnected;
+        public final String model;
+        public final String hardwareVersion;
+        public final String firmwareVersion;
 
-        BatteryStatus(int percent, boolean charging, boolean batteryConnected) {
+        BatteryStatus(int percent, boolean charging, boolean batteryConnected,
+                      String model, String hardwareVersion, String firmwareVersion) {
             this.percent = percent;
             this.charging = charging;
             this.batteryConnected = batteryConnected;
+            this.model = model;
+            this.hardwareVersion = hardwareVersion;
+            this.firmwareVersion = firmwareVersion;
         }
     }
 
@@ -106,7 +126,7 @@ public final class M7200Client {
         String rsaMod = challenge.optString("rsaMod", "");
         String rsaExp = challenge.optString("rsaPubKey", "");
         if (nonce.isEmpty() || rsaMod.isEmpty() || rsaExp.isEmpty()) {
-            throw new Exception("הנתב לא החזיר פרטי התחברות תקינים");
+            throw new ProtocolMismatchException("הנתב הגיב, אך ממשק ההתחברות שלו שונה מהפרוטוקול שהאפליקציה מכירה.");
         }
 
         Session candidate = new Session();
@@ -129,7 +149,7 @@ public final class M7200Client {
         try {
             loginResponse = new JSONObject(aesDecrypt(encryptedResponse, candidate.key, candidate.iv));
         } catch (Exception e) {
-            throw new PasswordRejectedException("הנתב לא קיבל את הסיסמה. בדוק את סיסמת הניהול.", e);
+            throw new ProtocolMismatchException("הנתב הגיב, אך פורמט ההתחברות המוצפן אינו תואם לפרוטוקול הנתמך.", e);
         }
 
         if (loginResponse.optInt("result", -1) != 0 || loginResponse.optString("token", "").isEmpty()) {
@@ -153,15 +173,21 @@ public final class M7200Client {
         }
 
         JSONObject battery = response.optJSONObject("battery");
-        if (battery == null) throw new Exception("הנתב לא החזיר נתוני סוללה");
-
+        if (battery == null) {
+            throw new ProtocolMismatchException("ההתחברות לנתב הצליחה, אך הוא לא החזיר נתוני סוללה במבנה המוכר.");
+        }
         int percent = (int) Math.round(battery.optDouble("voltage", -1));
         if (percent < 0 || percent > 100) {
-            throw new Exception("הנתב החזיר אחוז סוללה לא תקין");
+            throw new ProtocolMismatchException("הנתב החזיר נתוני סוללה, אך שדה אחוז הסוללה אינו בפורמט מוכר.");
         }
         boolean charging = jsonBoolean(battery, "charging", false);
         boolean connected = jsonBoolean(battery, "connected", true);
-        return new BatteryStatus(percent, charging, connected);
+        JSONObject deviceInfo = response.optJSONObject("deviceInfo");
+        if (deviceInfo == null) deviceInfo = new JSONObject();
+        String model = firstNonEmpty(deviceInfo, "model", "modelName", "deviceModel");
+        String hardware = firstNonEmpty(deviceInfo, "hardwareVersion", "hardwareVer", "hwVersion", "hardware_version");
+        String firmware = firstNonEmpty(deviceInfo, "firmwareVersion", "firmwareVer", "softwareVersion", "fwVersion");
+        return new BatteryStatus(percent, charging, connected, model, hardware, firmware);
     }
 
     private JSONObject encryptedPayload(JSONObject command, Session active, boolean login) throws Exception {
@@ -178,7 +204,8 @@ public final class M7200Client {
     private String post(String endpoint, JSONObject payload) throws Exception {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(ROUTER + "/cgi-bin/" + endpoint);
+            String router = routerBaseUrl;
+            URL url = new URL(router + "/cgi-bin/" + endpoint);
             Network selectedNetwork = wifiNetwork;
             connection = (HttpURLConnection) (selectedNetwork != null
                     ? selectedNetwork.openConnection(url)
@@ -188,8 +215,8 @@ public final class M7200Client {
             connection.setReadTimeout(READ_TIMEOUT_MS);
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setRequestProperty("Referer", ROUTER + "/");
-            connection.setRequestProperty("Origin", ROUTER);
+            connection.setRequestProperty("Referer", router + "/");
+            connection.setRequestProperty("Origin", router);
             connection.setRequestProperty("User-Agent", "okhttp/3.11.0");
 
             byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
@@ -219,6 +246,14 @@ public final class M7200Client {
             while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
             return out.toString(StandardCharsets.UTF_8.name());
         }
+    }
+
+    private static String firstNonEmpty(JSONObject object, String... keys) {
+        for (String key : keys) {
+            String value = object.optString(key, "").trim();
+            if (!value.isEmpty() && !"null".equalsIgnoreCase(value)) return value;
+        }
+        return "";
     }
 
     private static JSONObject decodePlainResponse(String raw) throws Exception {
