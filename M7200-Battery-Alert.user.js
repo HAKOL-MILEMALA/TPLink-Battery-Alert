@@ -1,7 +1,8 @@
+/* eslint-disable userscripts/avoid-regexp-include -- Regex is required to match private LAN IPv4 ranges; @match cannot express IP subnets. */
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.4
+// @version      1.5.5
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -9,7 +10,6 @@
 // @downloadURL  https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @updateURL    https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @match        https://*/*
-// eslint-disable-next-line userscripts/avoid-regexp-include -- Regex is required to match private LAN IPv4 ranges; @match cannot express IP subnets.
 // @include    /^http:\/\/(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2})(?::\d+)?\/.*$/
 // @match        http://tplinkmifi.net/*
 // @match        http://tplinkwifi.net/*
@@ -33,12 +33,13 @@
 // @run-at       document-idle
 // @noframes
 // ==/UserScript==
+/* eslint-enable userscripts/avoid-regexp-include */
 
 (() => {
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.4';
+    const SCRIPT_VERSION = '1.5.5';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
