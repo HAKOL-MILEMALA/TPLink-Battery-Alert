@@ -17,11 +17,13 @@ The Android app performs a live, read-only compatibility check against the conne
 - [Install Tampermonkey for Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
 - [Install TP-Link MiFi Battery Alert userscript](https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js)
 
+**Userscript version: 2.0.0**
+
 The userscript warns at 15% battery and raises an urgent alert at 10%. It estimates time to a 5% safety threshold when enough history is available, and supports manual and automatic snoozing.
 
 The browser version performs a live compatibility check using the router's local API. It supports only devices that successfully complete the login flow and return a valid battery percentage; TP-Link branding or tpMiFi-app support alone is not enough to establish protocol compatibility. A report button opens a pre-filled GitHub issue draft for successful tests or protocol mismatches. Reports are never submitted automatically.
 
-For first-time setup, open the router's local HTTP management page once so the script can save its local address. Keep Chrome open with at least one HTTPS tab while monitoring. Existing installations that already have a saved router password but no saved router address are migrated to the legacy default `http://192.168.0.1`.
+For first-time setup, open the router's local HTTP management page once so the script can save its local address. Keep Chrome open with at least one HTTPS tab while monitoring.
 
 ### Privacy and Tampermonkey's cross-origin permission prompt
 
