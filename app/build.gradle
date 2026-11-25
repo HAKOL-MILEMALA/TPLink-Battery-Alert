@@ -31,6 +31,13 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    lint {
+        // This app is distributed directly as an APK, not through Google Play.
+        // Keep targetSdk 32 intentionally for the Android 12 head unit and its
+        // long-running foreground monitor; suppress only Play Store target-SDK advice.
+        disable 'ExpiredTargetSdkVersion'
+    }
+
     if (signingPropertiesFile.exists()) {
         signingConfigs {
             stable {
