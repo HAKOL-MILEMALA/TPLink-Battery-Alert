@@ -58,7 +58,7 @@ public final class UpdateChecker {
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(12000);
             connection.setRequestProperty("Accept", "application/vnd.github+json");
-            connection.setRequestProperty("User-Agent", "M7200-Car-Alert-Android");
+            connection.setRequestProperty("User-Agent", "TP-Link-Battery-Alert-Android");
             connection.setInstanceFollowRedirects(true);
 
             int code = connection.getResponseCode();
@@ -121,7 +121,7 @@ public final class UpdateChecker {
 
             return new UpdateInfo(
                     version,
-                    release.optString("name", "M7200 Car Alert " + version),
+                    release.optString("name", "TP-Link Battery Alert " + version),
                     release.optString("body", ""),
                     downloadUrl,
                     digest,

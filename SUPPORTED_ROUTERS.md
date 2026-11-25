@@ -50,3 +50,10 @@ The status response may also expose `deviceInfo.model`, `deviceInfo.firmwareVers
 5. Update this file only after the evidence supports the new status.
 
 Neither client includes router credentials, local IP address, Wi-Fi network name, MAC address, or IMEI in the compatibility report.
+
+
+## Community reports (automatically updated)
+
+Community reports are aggregated separately from the manually maintained evidence above. See [COMMUNITY_COMPATIBILITY.md](COMMUNITY_COMPATIBILITY.md).
+
+The aggregation key is the exact model, hardware revision and firmware version. One distinct GitHub reporter means likely supported/unsupported; two distinct reporters with the same outcome mean supported/unsupported. Conflicting results, or contradictory reports from the same user, are marked disputed and are never settled by simple majority. Android notification delivery is tracked independently and never changes protocol compatibility.

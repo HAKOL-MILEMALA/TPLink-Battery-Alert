@@ -90,7 +90,7 @@ public final class M7200MonitorService extends Service {
 
     private ScheduledExecutorService createMonitorExecutor() {
         return Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "M7200-battery-monitor");
+            Thread thread = new Thread(r, "TP-Link-battery-monitor");
             thread.setDaemon(true);
             return thread;
         });
@@ -198,7 +198,7 @@ public final class M7200MonitorService extends Service {
         );
         return new Notification.Builder(this, CHANNEL_SERVICE)
                 .setSmallIcon(android.R.drawable.stat_sys_warning)
-                .setContentTitle("התראת סוללת TP-Link MiFi")
+                .setContentTitle("TP-Link Battery Alert")
                 .setContentText(text)
                 .setContentIntent(pending)
                 .setOngoing(true)
@@ -247,7 +247,7 @@ public final class M7200MonitorService extends Service {
 
         NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_SERVICE,
-                "פעילות ניטור M7200",
+                "פעילות TP-Link Battery Alert",
                 NotificationManager.IMPORTANCE_LOW
         );
         serviceChannel.setDescription("חיווי שקט שהניטור פועל ברקע");
@@ -270,7 +270,7 @@ public final class M7200MonitorService extends Service {
                 "התראת סוללה נמוכה",
                 NotificationManager.IMPORTANCE_HIGH
         );
-        alertChannel.setDescription("התראה בולטת כאשר סוללת ה-M7200 מגיעה ל-10%");
+        alertChannel.setDescription("התראה בולטת כאשר סוללת נתב TP-Link מגיעה ל-10%");
         alertChannel.enableVibration(true);
         alertChannel.setVibrationPattern(new long[]{0, 400, 200, 400});
         manager.createNotificationChannel(alertChannel);
@@ -317,7 +317,7 @@ public final class M7200MonitorService extends Service {
 
             Notification notification = new Notification.Builder(this, CHANNEL_UPDATE)
                     .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                    .setContentTitle("קיים עדכון ל-M7200 Car Alert")
+                    .setContentTitle("קיים עדכון ל-TP-Link Battery Alert")
                     .setContentText("גרסה " + update.version + " זמינה. לחץ לפתיחת האפליקציה.")
                     .setContentIntent(pending)
                     .setAutoCancel(true)

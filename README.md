@@ -1,4 +1,4 @@
-# TP-Link MiFi Battery Alert
+# TP-Link Battery Alert
 
 This repository provides two ways to monitor compatible TP-Link MiFi routers:
 
@@ -7,9 +7,10 @@ This repository provides two ways to monitor compatible TP-Link MiFi routers:
 - [Download latest APK](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases/latest/download/M7200-Car-Alert.apk)
 - [Hebrew documentation](README_HE.md)
 - [Router compatibility evidence and status](SUPPORTED_ROUTERS.md)
+- [Community compatibility reports](COMMUNITY_COMPATIBILITY.md)
 - [GitHub releases](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases)
 
-The Android app performs a live, read-only compatibility check against the connected router. It reports a device as supported only after it successfully reads a valid battery percentage. Compatibility reports open a pre-filled GitHub issue draft; the user must review and submit it.
+The Android app performs a live, read-only compatibility check against the connected router. Router protocol support and Android notification delivery are tracked separately. Reports open a public, pre-filled GitHub issue draft after user confirmation; the user must sign in and submit it manually. GitHub Actions aggregates reports by exact model, hardware revision, firmware and distinct GitHub reporters.
 
 ## Browser userscript (Chrome + Tampermonkey)
 

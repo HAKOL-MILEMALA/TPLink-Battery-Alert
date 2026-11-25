@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -11,7 +12,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="התראת סוללת TP-Link MiFi"
+        android:label="TP-Link Battery Alert"
         android:icon="@drawable/ic_app"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"

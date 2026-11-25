@@ -16,7 +16,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="ניטור סוללת TP-Link MiFi"
+            android:text="TP-Link Battery Alert"
             android:textColor="#18324A"
             android:textSize="23sp"
             android:textStyle="bold"
@@ -27,12 +27,19 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="האפליקציה בודקת את סוללת הנתב דרך רשת ה-Wi-Fi המקומית ומתריעה כשהיא מגיעה ל-10% ומטה."
+            android:text="ניטור סוללת נתבי TP-Link MiFi והתראה כשהסוללה מגיעה ל-10% ומטה."
             android:textColor="#526579"
             android:textSize="16sp"
             android:lineSpacingExtra="4dp"
             android:gravity="center"
             android:paddingBottom="8dp" />
+
+        <Button
+            android:id="@+id/howToButton"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:text="איך מתחילים?"
+            android:layout_marginBottom="12dp" />
 
         <TextView
             android:id="@+id/appVersionText"
@@ -112,7 +119,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="דוח התאימות נפתח כטיוטה ב-GitHub. שום דבר לא נשלח עד לאישור ושליחה ידנית שלך."
+            android:text="לפני דיווח תתבקש לאשר את התוצאה. הדיווח ציבורי ונשלח רק לאחר שתאשר אותו ב-GitHub."
             android:textColor="#8292A1"
             android:textSize="12sp"
             android:paddingTop="5dp"
@@ -125,6 +132,13 @@
             android:text="שמור והפעל ניטור"
             android:textSize="17sp"
             android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/testNotificationButton"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="שלח התראת ניסיון"
+            android:layout_marginTop="7dp" />
 
         <Button
             android:id="@+id/stopButton"

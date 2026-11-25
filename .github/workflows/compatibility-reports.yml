@@ -1,0 +1,39 @@
+name: Process router compatibility reports
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: community-compatibility-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  process:
+    if: contains(github.event.issue.body, '<!-- tplink-battery-report:v2')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Aggregate reports and update issue labels
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_ACTION: ${{ github.event.action }}
+        run: python3 .github/scripts/update_compatibility_reports.py
+      - name: Commit refreshed community compatibility list
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add COMMUNITY_COMPATIBILITY.md data/community_compatibility.json
+          if git diff --cached --quiet; then
+            echo "Community compatibility summary is already up to date."
+            exit 0
+          fi
+          git commit -m "chore: refresh community compatibility reports"
+          git push
