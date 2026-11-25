@@ -79,7 +79,11 @@ public final class MainActivity extends Activity {
         }
 
         updateStatusText.setText("בדיקת עדכונים אוטומטית מתבצעת מדי פעם, ואפשר לבדוק גם בלחיצה.");
-        maybeCheckUpdatesAutomatically();
+        if (getIntent() != null && getIntent().getBooleanExtra("check_updates_now", false)) {
+            checkForUpdates(true);
+        } else {
+            maybeCheckUpdatesAutomatically();
+        }
     }
 
     @Override
