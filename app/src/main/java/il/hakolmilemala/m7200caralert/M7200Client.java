@@ -149,7 +149,9 @@ public final class M7200Client {
         try {
             loginResponse = new JSONObject(aesDecrypt(encryptedResponse, candidate.key, candidate.iv));
         } catch (Exception e) {
-            throw new ProtocolMismatchException("הנתב הגיב, אך פורמט ההתחברות המוצפן אינו תואם לפרוטוקול הנתמך.", e);
+            // A failed decrypt can also happen with a wrong admin password.
+            // Do not classify the router as unsupported without a successful login.
+            throw new PasswordRejectedException("לא ניתן לפענח את תגובת ההתחברות. ייתכן שסיסמת הניהול שגויה או שפרוטוקול ההצפנה שונה.", e);
         }
 
         if (loginResponse.optInt("result", -1) != 0 || loginResponse.optString("token", "").isEmpty()) {

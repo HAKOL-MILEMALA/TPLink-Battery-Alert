@@ -243,7 +243,7 @@ public final class MainActivity extends Activity {
                         .apply();
                 runOnUiThread(() -> {
                     if (error instanceof M7200Client.PasswordRejectedException) {
-                        routerCompatibilityText.setText("🔒 הנתב הגיב, אך דחה את סיסמת הניהול.\nזה לא אומר שהדגם אינו נתמך. בדוק את הסיסמה ונסה שוב.");
+                        routerCompatibilityText.setText("🔒 לא ניתן להשלים אימות מול הנתב. ייתכן שסיסמת הניהול שגויה או שפרוטוקול ההצפנה שונה.\nהדגם לא סומן כלא נתמך. בדוק את הסיסמה ונסה שוב.");
                         reportRouterButton.setVisibility(View.GONE);
                     } else if (error instanceof M7200Client.ProtocolMismatchException) {
                         routerCompatibilityText.setText("⚠️ הנתב הגיב, אך ממשק התקשורת או מבנה נתוני הסוללה אינם תואמים לפרוטוקול הנוכחי.\nהדגם הזה אינו נתמך כרגע בגרסה הנוכחית. אפשר לשלוח דוח כדי לבדוק הוספת תמיכה.\nפרטים: " + detail);
