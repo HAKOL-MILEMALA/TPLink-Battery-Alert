@@ -14,7 +14,7 @@ This list distinguishes protocol evidence from live validation with the Android 
 | M7000 | The independent mt-ks API client reports tests with both M7000 and M7200; another MiFi monitor project also identifies this API family | External protocol evidence; live test still required in this project |
 | M7350 EU V9.0, firmware 9.0.5 | Independently probed by the TP-Link MiFi Battery Monitor project; it documents the same auth_cgi/web_cgi API and battery response | External protocol evidence; live test required in the Android app or browser userscript |
 | M7010 | Listed in TP-Link's official tpMiFi compatibility list in the App Store; the exact API used by this project is not confirmed | Candidate / unverified |
-| M7300 | Included in TP-Link's official tpMiFi compatibility list; protocol for this project not confirmed | Candidate / unverified | Included in TP-Link's official tpMiFi compatibility list; protocol for this project not confirmed | Candidate / unverified |
+| M7300 | Included in TP-Link's official tpMiFi compatibility list; protocol for this project not confirmed | Candidate / unverified |
 | M7310 | Included in TP-Link's official tpMiFi compatibility list; protocol for this app not confirmed | Candidate / unverified |
 | M7450 | Included in TP-Link's official tpMiFi compatibility list; protocol for this app not confirmed | Candidate / unverified |
 | M7650 | Included in TP-Link's official tpMiFi compatibility list; protocol for this app not confirmed | Candidate / unverified |
