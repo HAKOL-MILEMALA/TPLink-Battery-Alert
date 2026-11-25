@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.5
+// @version      1.5.6
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -29,7 +29,6 @@
 // @grant        GM_notification
 // @grant        GM_addValueChangeListener
 // @grant        GM_openInTab
-// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // @noframes
 // ==/UserScript==
@@ -39,7 +38,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.5';
+    const SCRIPT_VERSION = '1.5.6';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -59,26 +58,63 @@
             value === 'tplinkmodem.net';
     }
 
-    function isRouterManagementPage() {
-        if (location.protocol !== 'http:') return false;
-        const saved = String(GM_getValue(ROUTER_STORAGE_KEY, '') || '').replace(/\/+$/, '');
-        if (saved && location.origin === saved) return true;
-        if (!isAllowedRouterHost(location.hostname)) return false;
+    function isPotentialMiFiManagementPage() {
+        if (location.protocol !== 'http:' || !isAllowedRouterHost(location.hostname)) return false;
+        if (location.hostname.toLowerCase() === 'tplinkmifi.net') return true;
 
         const pageText = [
             document.title || '',
-            document.body ? String(document.body.innerText || '').slice(0, 1800) : ''
+            document.body ? String(document.body.innerText || '').slice(0, 2500) : ''
         ].join(' ');
 
-        return /TP[\s-]?Link|MiFi|Mobile\s*Wi-?Fi|tplink/i.test(pageText) ||
-            /\/(?:login|index)\.html$/i.test(location.pathname);
+        const hasMiFiLabel = /\btpmiFi\b|\bMiFi\b|Mobile\s*Wi-?Fi/i.test(pageText);
+        const hasTpLinkBrand = /TP[\s-]?Link/i.test(pageText);
+        const hasMiFiModel = /\bM\d{3,5}\b/i.test(pageText);
+
+        // A generic TP-Link router (Archer/Deco) is not enough.
+        return hasMiFiLabel || (hasTpLinkBrand && hasMiFiModel);
+    }
+
+    const SAVED_ROUTER_ORIGIN = String(
+        GM_getValue(ROUTER_STORAGE_KEY, '') || ''
+    ).replace(/\/+$/, '');
+
+    function isRouterManagementPage() {
+        if (location.protocol !== 'http:') return false;
+
+        // Once a router has been configured, only its exact origin is trusted.
+        if (SAVED_ROUTER_ORIGIN) return location.origin === SAVED_ROUTER_ORIGIN;
+
+        return isPotentialMiFiManagementPage();
     }
 
     const IS_ROUTER_PAGE = isRouterManagementPage();
+    const IS_ROUTER_SWITCH_CANDIDATE = Boolean(
+        SAVED_ROUTER_ORIGIN &&
+        location.origin !== SAVED_ROUTER_ORIGIN &&
+        isPotentialMiFiManagementPage()
+    );
+    const IS_ROUTER_UI_PAGE = IS_ROUTER_PAGE || IS_ROUTER_SWITCH_CANDIDATE;
+
+    // Mark a router UI as open immediately, before the rest of the script initializes.
+    if (IS_ROUTER_UI_PAGE) {
+        const key = 'm7200_router_presence_v2';
+        const current = GM_getValue(key, {});
+        const presence = current && typeof current === 'object' && !Array.isArray(current)
+            ? {...current}
+            : {};
+        presence.__opening = Date.now();
+        GM_setValue(key, presence);
+    }
+
     if (IS_ROUTER_PAGE) {
-        const previousHost = String(GM_getValue(ROUTER_STORAGE_KEY, '') || '').replace(/\/+$/, '');
+        const previousHost = String(
+            GM_getValue(ROUTER_STORAGE_KEY, '') || ''
+        ).replace(/\/+$/, '');
+
         if (previousHost !== location.origin) {
-            if (previousHost) GM_deleteValue('m7200_password');
+            // First-time discovery only. A different configured origin is never
+            // silently adopted, and a saved password is never deleted here.
             GM_setValue('m7200_history', []);
             GM_setValue('m7200_alarm_state', {stage: 0, wasCharging: false});
             GM_setValue('m7200_snooze', null);
@@ -129,9 +165,8 @@
 
     const AUTH_FAILURES_BEFORE_ASK = 2;
     const PASSWORD_REQUEST_COOLDOWN = 15 * 60 * 1000;
-    const ROUTER_TAB_ABSENT_AFTER = 25 * 1000;
-    const ROUTER_PRESENCE_TTL = 20 * 1000;
-    const ROUTER_PRESENCE_INTERVAL = 5 * 1000;
+    const ROUTER_PRESENCE_TTL = 150 * 1000;
+    const ROUTER_PRESENCE_INTERVAL = 15 * 1000;
 
     const K = {
         password: 'm7200_password',
@@ -143,7 +178,8 @@
         passwordTicket: 'm7200_password_ticket',
         passwordRequest: 'm7200_password_request',
         lastPasswordRequest: 'm7200_last_password_request',
-        routerPresence: 'm7200_router_presence',
+        routerPresence: 'm7200_router_presence_v2',
+        routerPresenceLegacy: 'm7200_router_presence',
         panelDismissed: 'm7200_panel_dismissed_origin',
         lock: 'm7200_monitor_lock',
         alarm: 'm7200_alarm_state',
@@ -192,6 +228,8 @@
     let pwShadow = null;
     let pwChecking = false;
     let pwTimeout = null;
+    let routerSwitchHost = null;
+    let routerSwitchShadow = null;
 
     // ======================== בניית רכיבי DOM בטוחה ========================
     // אין שימוש ב-innerHTML: כך לא מתנגשים עם Trusted Types של Chrome.
@@ -735,19 +773,55 @@
         return clean.slice(0, 160);
     }
 
+    function responseFieldNames(object) {
+        if (!object || typeof object !== 'object' || Array.isArray(object)) return 'לא התקבל';
+        const names = Object.keys(object)
+            .filter(key => /^[A-Za-z0-9_$.-]{1,48}$/.test(key))
+            .slice(0, 30);
+        return names.length ? names.join(', ') : 'לא נמצאו שמות שדות';
+    }
+
     function saveCompatibilityResult(result, status = null, details = '', batteryPercent = null, charging = null) {
-        const identity = routerIdentity(status);
+        const previous = GM_getValue(K.compatibilityState, null);
+        const currentIdentity = routerIdentity(status);
+        const identity = {
+            model: currentIdentity.model !== 'לא דווח' ? currentIdentity.model : (previous && previous.model) || currentIdentity.model,
+            hardwareVersion: currentIdentity.hardwareVersion !== 'לא דווחה' ? currentIdentity.hardwareVersion : (previous && previous.hardwareVersion) || currentIdentity.hardwareVersion,
+            firmwareVersion: currentIdentity.firmwareVersion !== 'לא דווחה' ? currentIdentity.firmwareVersion : (previous && previous.firmwareVersion) || currentIdentity.firmwareVersion
+        };
+        const battery = status && status.battery && typeof status.battery === 'object'
+            ? status.battery
+            : null;
+
         GM_setValue(K.compatibilityState, {
             result,
             model: safeReportValue(identity.model),
             hardwareVersion: safeReportValue(identity.hardwareVersion),
             firmwareVersion: safeReportValue(identity.firmwareVersion),
+            statusFields: safeReportValue(responseFieldNames(status)),
+            batteryFields: safeReportValue(responseFieldNames(battery)),
             details: safeReportValue(details, ''),
             batteryPercent: Number.isFinite(Number(batteryPercent)) ? Number(batteryPercent) : null,
             charging: charging === true,
             time: Date.now(),
             scriptVersion: SCRIPT_VERSION
         });
+    }
+
+    function markProtocolMismatch(status, message) {
+        const previous = GM_getValue(K.compatibilityState, null);
+        if (previous && previous.result === 'LIVE_SUCCESS') {
+            notify(
+                'TP-Link MiFi – הניטור נעצר',
+                'הנתב החזיר נתונים במבנה לא מוכר. ייתכן שהקושחה עודכנה או שממשק הנתב השתנה.',
+                {timeout: 20000, tag: 'tplink-mifi-protocol-mismatch'}
+            );
+        }
+        saveCompatibilityResult(
+            'PROTOCOL_MISMATCH',
+            status,
+            message || 'הנתב אינו מחזיר נתונים במבנה שהסקריפט מכיר.'
+        );
     }
 
     async function runCompatibilityCheck() {
@@ -797,11 +871,12 @@
             else if (error instanceof PasswordError || error instanceof AuthError) result = 'AUTH_FAILED';
             else if (error instanceof NetworkError) result = 'NETWORK_ERROR';
 
-            saveCompatibilityResult(
-                result,
-                status,
-                error && error.message ? error.message : String(error)
-            );
+            const details = error && error.message ? error.message : String(error);
+            if (result === 'PROTOCOL_MISMATCH') {
+                markProtocolMismatch(status, details);
+            } else {
+                saveCompatibilityResult(result, status, details);
+            }
         } finally {
             compatibilityCheckInProgress = false;
             if (isRouterManagementPageOpen()) {
@@ -810,9 +885,53 @@
         }
     }
 
+    function readRouterPresenceMap() {
+        const value = GM_getValue(K.routerPresence, {});
+        return value && typeof value === 'object' && !Array.isArray(value)
+            ? {...value}
+            : {};
+    }
+
+    function updateRouterPresence(active) {
+        const now = Date.now();
+        const presence = readRouterPresenceMap();
+
+        for (const [owner, value] of Object.entries(presence)) {
+            const timestamp = Number(value);
+            if (!Number.isFinite(timestamp) || timestamp <= 0 ||
+                now < timestamp || now - timestamp >= ROUTER_PRESENCE_TTL) {
+                delete presence[owner];
+            }
+        }
+
+        if (active) {
+            delete presence.__opening;
+            delete presence.__switching;
+            presence[INSTANCE_ID] = now;
+        } else {
+            delete presence[INSTANCE_ID];
+        }
+
+        GM_setValue(K.routerPresence, presence);
+    }
+
     function isRouterManagementPageOpen() {
-        const lastSeen = Number(GM_getValue(K.routerPresence, 0));
-        return lastSeen > 0 && Date.now() - lastSeen < ROUTER_PRESENCE_TTL;
+        const now = Date.now();
+
+        // Compatibility with a router tab that is still running version 1.5.5.
+        const legacy = Number(GM_getValue(K.routerPresenceLegacy, 0));
+        if (legacy > 0 && now >= legacy && now - legacy < ROUTER_PRESENCE_TTL) {
+            return true;
+        }
+
+        const presence = readRouterPresenceMap();
+        return Object.values(presence).some(value => {
+            const timestamp = Number(value);
+            return Number.isFinite(timestamp) &&
+                timestamp > 0 &&
+                now >= timestamp &&
+                now - timestamp < ROUTER_PRESENCE_TTL;
+        });
     }
 
     function hasPendingCompatibilityCheck() {
@@ -867,8 +986,8 @@
             GM_setValue(K.passwordRequest, request);
         }
 
-        if (IS_ROUTER_PAGE) {
-            showPasswordPanel(request);
+        if (IS_ROUTER_UI_PAGE) {
+            if (IS_ROUTER_PAGE) showPasswordPanel(request);
             return;
         }
 
@@ -892,9 +1011,7 @@
             );
         }
 
-        const presence = Number(GM_getValue(K.routerPresence, 0));
-
-        if (now - presence > ROUTER_TAB_ABSENT_AFTER) {
+        if (!isRouterManagementPageOpen()) {
             openRouterTab();
         }
     }
@@ -917,7 +1034,7 @@
     function submitPassword() {
         if (!pwShadow) return;
         const input = pwShadow.getElementById('pw');
-        const value = input ? input.value.trim() : '';
+        const value = input ? input.value : '';
 
         if (value) {
             GM_setValue(K.password, value);
@@ -960,6 +1077,8 @@
             '- גרסת הסקריפט: ' + SCRIPT_VERSION,
             '- אחוז סוללה בבדיקה: ' + (profile.batteryPercent == null ? 'לא התקבל' : profile.batteryPercent + '%'),
             '- פרטים: ' + safeReportValue(profile.details, 'ללא פירוט'),
+            '- שמות השדות שחזרו ב-status (ללא ערכים): ' + safeReportValue(profile.statusFields, 'לא התקבל'),
+            '- שמות השדות שחזרו ב-battery (ללא ערכים): ' + safeReportValue(profile.batteryFields, 'לא התקבל'),
             '',
             'הדוח נוצר מתוך בדיקת קריאה בלבד.',
             'לא נכללו בו סיסמת ניהול, כתובת IP מקומית, שם רשת Wi-Fi, כתובת MAC או IMEI.'
@@ -1081,7 +1200,7 @@
         check.addEventListener('click', () => {
             const field = pwShadow.getElementById('pw');
             if (field) {
-                if (field.value.trim()) submitPassword();
+                if (field.value.length > 0) submitPassword();
                 else field.focus();
                 return;
             }
@@ -1146,20 +1265,87 @@
         );
     }
 
-    function initRouterPage() {
+    function showRouterSwitchPrompt() {
+        if (!IS_ROUTER_SWITCH_CANDIDATE || routerSwitchHost) return;
+
+        routerSwitchHost = document.createElement('div');
+        routerSwitchHost.id = 'tplink-mifi-switch-host';
+        routerSwitchHost.style.cssText =
+            'all:initial;position:fixed;z-index:2147483647;top:18px;left:50%;transform:translateX(-50%);';
+        routerSwitchShadow = routerSwitchHost.attachShadow({mode: 'closed'});
+
+        const style = makeElement('style');
+        style.textContent =
+            '*{box-sizing:border-box}' +
+            '.panel{direction:rtl;width:min(390px,calc(100vw - 36px));font:14px Arial,sans-serif;background:#fff;color:#202124;border:1px solid #dadce0;border-top:5px solid #b06000;border-radius:12px;box-shadow:0 8px 28px #0003;padding:16px}' +
+            '.head{font-size:16px;font-weight:700;margin-bottom:8px}' +
+            '.msg{line-height:1.55;color:#333;margin-bottom:13px}' +
+            '.buttons{display:flex;gap:8px;flex-wrap:wrap}' +
+            'button{font:600 13px Arial;border:0;border-radius:7px;padding:9px 12px;cursor:pointer}' +
+            '#switch{background:#b06000;color:#fff}' +
+            '#cancel{background:#e8eaed;color:#202124}';
+
+        const panel = makeElement('div', 'panel');
+        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('aria-live', 'polite');
+        panel.appendChild(makeElement('div', 'head', 'זוהה ממשק TP-Link MiFi בכתובת אחרת'));
+        panel.appendChild(makeElement(
+            'div',
+            'msg',
+            'הכתובת הזו שונה מהנתב שהוגדר בעבר. לא אתחבר לנתב החדש עד לאישור שלך. החלפת הנתב תעדכן את כתובת הניהול, תמחק את סיסמת הניהול הישנה ותאפס את היסטוריית הסוללה וההתראות.'
+        ));
+
+        const buttons = makeElement('div', 'buttons');
+        const switchButton = makeElement('button', '', 'החלף לנתב הזה');
+        switchButton.id = 'switch';
+        switchButton.addEventListener('click', () => {
+            const keysToClear = [
+                K.password, K.routerFingerprint, K.compatibilityTicket,
+                K.compatibilityHandledTicket, K.compatibilityState,
+                K.passwordTicket, K.passwordRequest, K.lastPasswordRequest,
+                K.lock, K.alarm, K.snooze, K.alert, K.dismissed,
+                K.history, K.lastError, K.lastStatus, K.panelDismissed,
+                K.focusAt, K.routerPresenceLegacy
+            ];
+            keysToClear.forEach(key => GM_deleteValue(key));
+
+            // Hold polling tabs while the new origin is installed and reloaded.
+            GM_setValue(K.routerPresence, {__switching: Date.now()});
+            GM_setValue(K.routerBase, location.origin);
+            location.reload();
+        });
+        buttons.appendChild(switchButton);
+
+        const cancelButton = makeElement('button', '', 'לא עכשיו');
+        cancelButton.id = 'cancel';
+        cancelButton.addEventListener('click', () => {
+            routerSwitchHost.remove();
+            routerSwitchHost = null;
+            routerSwitchShadow = null;
+        });
+        buttons.appendChild(cancelButton);
+        panel.appendChild(buttons);
+
+        routerSwitchShadow.replaceChildren(style, panel);
+        (document.documentElement || document.body).appendChild(routerSwitchHost);
+    }
+
+    function initRouterPage({showPanel = IS_ROUTER_PAGE} = {}) {
         const beat = () => {
-            GM_setValue(K.routerPresence, Date.now());
+            updateRouterPresence(true);
             markFocused();
         };
 
         beat();
         setInterval(beat, ROUTER_PRESENCE_INTERVAL);
+        window.addEventListener('pageshow', beat);
 
-        // Keep a short presence grace period on reload/navigation so another
-        // tab does not restart polling while the router UI is being reloaded.
         window.addEventListener('pagehide', () => {
-            GM_setValue(K.routerPresence, Date.now());
+            updateRouterPresence(false);
+            clearFocused();
         });
+
+        if (!showPanel) return;
 
         const request = GM_getValue(K.passwordRequest, null);
         const requestIsFresh = request &&
@@ -1168,8 +1354,7 @@
         const dismissedHere = GM_getValue(K.panelDismissed, '') === location.origin;
 
         // Do not cover the router UI on every visit. Show only for first-time
-        // setup or a recent explicit password request. The panel can be opened
-        // later from the Tampermonkey menu.
+        // setup or a recent explicit password request.
         if (requestIsFresh) {
             showPasswordPanel(request);
         } else if (!hasPassword && !dismissedHere) {
@@ -1608,7 +1793,7 @@
         const connected = asBool(battery.connected, true);
 
         if (!Number.isFinite(level) || level < 0 || level > 100) {
-            saveCompatibilityResult('PROTOCOL_MISMATCH', status, 'הנתב לא החזיר אחוז סוללה תקין בשדה battery.voltage.');
+            markProtocolMismatch(status, 'הנתב לא החזיר אחוז סוללה תקין בשדה battery.voltage.');
             throw new ProtocolMismatchError('הנתב הגיב, אך נתוני הסוללה אינם במבנה המוכר.');
         }
 
@@ -1797,10 +1982,7 @@
 
     function handlePollError(error) {
         if (error instanceof ProtocolMismatchError) {
-            const current = GM_getValue(K.compatibilityState, null);
-            if (!current || current.result !== 'PROTOCOL_MISMATCH') {
-                saveCompatibilityResult('PROTOCOL_MISMATCH', null, error.message || 'פרוטוקול הנתב אינו תואם.');
-            }
+            markProtocolMismatch(null, error.message || 'פרוטוקול הנתב אינו תואם.');
             return NORMAL_INTERVAL;
         }
 
@@ -1827,8 +2009,13 @@
     }
 
     async function poll() {
-        if (IS_ROUTER_PAGE || isRouterManagementPageOpen()) {
+        if (IS_ROUTER_UI_PAGE || isRouterManagementPageOpen()) {
             pauseForRouterUi();
+            return;
+        }
+
+        if (!GM_getValue(K.routerBase, '')) {
+            loseLeadership();
             return;
         }
 
@@ -1872,7 +2059,12 @@
     }
 
     async function heartbeat() {
-        if (IS_ROUTER_PAGE) {
+        if (IS_ROUTER_UI_PAGE) {
+            loseLeadership();
+            return;
+        }
+
+        if (!GM_getValue(K.routerBase, '')) {
             loseLeadership();
             return;
         }
@@ -1999,7 +2191,7 @@
     });
 
     GM_addValueChangeListener(K.routerPresence, () => {
-        if (IS_ROUTER_PAGE || compatibilityCheckInProgress) return;
+        if (IS_ROUTER_UI_PAGE || compatibilityCheckInProgress) return;
         if (isRouterManagementPageOpen()) {
             pauseForRouterUi();
         } else {
@@ -2008,9 +2200,13 @@
     });
 
     GM_addValueChangeListener(K.routerBase, () => {
-        if (IS_ROUTER_PAGE) return;
+        if (IS_ROUTER_UI_PAGE) return;
         session = null;
-        if (isLeader && !isRouterManagementPageOpen()) pollNow();
+        if (!GM_getValue(K.routerBase, '')) {
+            loseLeadership();
+            return;
+        }
+        heartbeat();
     });
 
     GM_addValueChangeListener(K.compatibilityHandledTicket, (_key, _oldValue, ticket) => {
@@ -2018,7 +2214,7 @@
     });
 
     GM_addValueChangeListener(K.compatibilityTicket, (_key, _oldValue, ticket) => {
-        if (IS_ROUTER_PAGE) return;
+        if (IS_ROUTER_UI_PAGE) return;
         const value = Number(ticket || 0);
         const handled = Number(GM_getValue(
             K.compatibilityHandledTicket,
@@ -2034,21 +2230,38 @@
         }
     });
 
-    GM_addValueChangeListener(K.compatibilityState, () => {
-        const state = GM_getValue(K.compatibilityState, null);
+    GM_addValueChangeListener(K.compatibilityState, (_key, oldState, newState) => {
+        const state = newState || GM_getValue(K.compatibilityState, null);
 
         if (state && ['LIVE_SUCCESS', 'PROTOCOL_MISMATCH'].includes(state.result)) {
             GM_setValue(K.passwordRequest, null);
         }
 
-        if (IS_ROUTER_PAGE && pwHost) {
+        const panelStateChanged = !oldState || !state ||
+            oldState.result !== state.result ||
+            oldState.model !== state.model ||
+            oldState.hardwareVersion !== state.hardwareVersion ||
+            oldState.firmwareVersion !== state.firmwareVersion ||
+            oldState.details !== state.details ||
+            oldState.statusFields !== state.statusFields ||
+            oldState.batteryFields !== state.batteryFields;
+
+        if (IS_ROUTER_PAGE && pwHost && panelStateChanged) {
             pwChecking = false;
+            const oldInput = pwShadow && pwShadow.getElementById('pw');
+            const typedValue = oldInput ? oldInput.value : '';
+            const hadFocus = oldInput === document.activeElement;
             renderPasswordPanel('settings');
+            const newInput = pwShadow && pwShadow.getElementById('pw');
+            if (newInput && typedValue) {
+                newInput.value = typedValue;
+                if (hadFocus) newInput.focus();
+            }
         }
     });
 
     GM_addValueChangeListener(K.passwordTicket, () => {
-        if (IS_ROUTER_PAGE) return;
+        if (IS_ROUTER_UI_PAGE) return;
         session = null;
 
         if (hasPendingCompatibilityCheck()) return;
@@ -2076,7 +2289,7 @@
         if (document.visibilityState === 'visible') {
             markFocused();
             syncAlert();
-            if (!IS_ROUTER_PAGE) heartbeat();
+            if (!IS_ROUTER_UI_PAGE) heartbeat();
         } else {
             clearFocused();
             hideToast();
@@ -2086,7 +2299,7 @@
     window.addEventListener('focus', () => {
         markFocused();
         syncAlert();
-        if (!IS_ROUTER_PAGE) heartbeat();
+        if (!IS_ROUTER_UI_PAGE) heartbeat();
     });
 
     window.addEventListener('blur', () => {
@@ -2095,18 +2308,6 @@
     });
 
     window.addEventListener('pagehide', clearFocused);
-
-    if (typeof GM_registerMenuCommand === 'function') {
-        GM_registerMenuCommand('פתח חלונית בדיקת נתב TP-Link', () => {
-            if (IS_ROUTER_PAGE) {
-                showPasswordPanel(
-                    GM_getValue(K.passwordRequest, null) || {reason: 'manual'}
-                );
-            } else {
-                requestPassword('manual');
-            }
-        });
-    }
 
     window.addEventListener('online', () => {
         if (!isLeader) return;
@@ -2123,8 +2324,12 @@
         syncAlert();
     }, startupDelay);
 
-    if (IS_ROUTER_PAGE) {
-        initRouterPage();
+    if (IS_ROUTER_UI_PAGE) {
+        initRouterPage({showPanel: IS_ROUTER_PAGE});
+    }
+
+    if (IS_ROUTER_SWITCH_CANDIDATE) {
+        showRouterSwitchPrompt();
     }
 
     if (
@@ -2135,7 +2340,7 @@
         return;
     }
 
-    if (!IS_ROUTER_PAGE) {
+    if (!IS_ROUTER_UI_PAGE) {
         setTimeout(heartbeat, startupDelay);
         setInterval(heartbeat, HEARTBEAT_INTERVAL);
     }
