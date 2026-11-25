@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.5.8
+// @version      1.5.9
 // @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert
@@ -38,7 +38,7 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const SCRIPT_VERSION = '1.5.8';
+    const SCRIPT_VERSION = '1.5.9';
     const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
 
     function isPrivateIPv4(host) {
@@ -1176,7 +1176,8 @@
             accent = '#1967d2';
         }
 
-        const showPasswordField = !hasPassword || status === 'ask' || reason === 'rejected' || failedNow;
+        const showPasswordField = !hasPassword || status === 'ask' ||
+            reason === 'rejected' || reason === 'manual' || failedNow;
         const canReport = profile &&
             (profile.result === 'LIVE_SUCCESS' || profile.result === 'PROTOCOL_MISMATCH');
 
@@ -1214,14 +1215,27 @@
             input.id = 'pw';
             input.type = 'password';
             input.autocomplete = 'current-password';
-            input.placeholder = 'סיסמת ניהול של הנתב';
+            input.placeholder = hasPassword
+                ? 'סיסמה חדשה (השאר ריק כדי להשתמש בקיימת)'
+                : 'סיסמת ניהול של הנתב';
             panel.appendChild(input);
+            if (hasPassword) {
+                panel.appendChild(makeElement(
+                    'div',
+                    'hint',
+                    'הזן סיסמה חדשה כדי להחליף את השמורה, או השאר את השדה ריק כדי לבדוק את הסיסמה הקיימת.'
+                ));
+            }
         }
 
         const buttons = makeElement('div', 'buttons');
 
         if (showPasswordField) {
-            const save = makeElement('button', '', 'שמור ובדוק');
+            const save = makeElement(
+                'button',
+                '',
+                hasPassword ? 'החלף סיסמה / בדוק' : 'שמור ובדוק'
+            );
             save.id = 'save';
             save.disabled = status === 'testing';
             save.addEventListener('click', submitPassword);
@@ -1238,9 +1252,12 @@
         check.disabled = status === 'testing' || status === 'queued';
         check.addEventListener('click', () => {
             const field = pwShadow.getElementById('pw');
-            if (field) {
-                if (field.value.length > 0) submitPassword();
-                else field.focus();
+            if (field && field.value.length > 0) {
+                submitPassword();
+                return;
+            }
+            if (field && !GM_getValue(K.password, '')) {
+                field.focus();
                 return;
             }
             if (!GM_getValue(K.password, '')) {
