@@ -1833,6 +1833,11 @@
     }
 
     async function heartbeat() {
+        if (IS_ROUTER_PAGE) {
+            loseLeadership();
+            return;
+        }
+
         if (heartbeatInProgress) return;
 
         heartbeatInProgress = true;
@@ -2016,7 +2021,7 @@
         if (document.visibilityState === 'visible') {
             markFocused();
             syncAlert();
-            heartbeat();
+            if (!IS_ROUTER_PAGE) heartbeat();
         } else {
             clearFocused();
             hideToast();
@@ -2026,7 +2031,7 @@
     window.addEventListener('focus', () => {
         markFocused();
         syncAlert();
-        heartbeat();
+        if (!IS_ROUTER_PAGE) heartbeat();
     });
 
     window.addEventListener('blur', () => {
