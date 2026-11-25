@@ -8,12 +8,13 @@ This list distinguishes protocol evidence from live validation with the Android 
 - **External protocol evidence:** An independent implementation has probed the same protocol, but the Android app or browser userscript has not yet been verified on that exact router.
 - **Candidate / unverified:** There is evidence of a TP-Link MiFi management interface, but no reliable evidence yet that it uses the protocol implemented here.
 
-| Model / revision | Current evidence | Status in this app |
+| Model / revision | Current evidence | Project status |
 | --- | --- | --- |
 | M7200 | Original target of this project's implementation; still verify the exact device using the in-app test | Baseline; confirm by live test |
 | M7000 | The independent mt-ks API client reports tests with both M7000 and M7200; another MiFi monitor project also identifies this API family | External protocol evidence; live test still required in this project |
 | M7350 EU V9.0, firmware 9.0.5 | Independently probed by the TP-Link MiFi Battery Monitor project; it documents the same auth_cgi/web_cgi API and battery response | External protocol evidence; live test required in the Android app or browser userscript |
-| M7010 | Listed in TP-Link's official tpMiFi compatibility list in the App Store; the exact API used by this project is not confirmed | Candidate / unverified |\n| M7300 | Included in TP-Link's official tpMiFi compatibility list; protocol for this project not confirmed | Candidate / unverified |
+| M7010 | Listed in TP-Link's official tpMiFi compatibility list in the App Store; the exact API used by this project is not confirmed | Candidate / unverified |
+| M7300 | Included in TP-Link's official tpMiFi compatibility list; protocol for this project not confirmed | Candidate / unverified | Included in TP-Link's official tpMiFi compatibility list; protocol for this project not confirmed | Candidate / unverified |
 | M7310 | Included in TP-Link's official tpMiFi compatibility list; protocol for this app not confirmed | Candidate / unverified |
 | M7450 | Included in TP-Link's official tpMiFi compatibility list; protocol for this app not confirmed | Candidate / unverified |
 | M7650 | Included in TP-Link's official tpMiFi compatibility list; protocol for this app not confirmed | Candidate / unverified |
@@ -40,9 +41,10 @@ The status response may also expose `deviceInfo.model`, `deviceInfo.firmwareVers
 
 ## Adding a model
 
-1. Run the in-app live compatibility test on the device.
-2. Submit the pre-filled compatibility report from the app.
-3. Review the report and, when possible, reproduce the test on the same hardware/firmware revision.
-4. Update this file only after the evidence supports the new status.
+1. Run the live compatibility test in the Android app or browser userscript.
+2. Use the report button to open a pre-filled GitHub issue draft.
+3. Review the report and submit it manually; it is never sent automatically.
+4. Reproduce the test on the same hardware/firmware revision when possible.
+5. Update this file only after the evidence supports the new status.
 
-The app never uploads router credentials or device identifiers as part of a compatibility report.
+Neither client includes router credentials, local IP address, Wi-Fi network name, MAC address, or IMEI in the compatibility report.
