@@ -24,8 +24,10 @@ public final class M7200MonitorService extends Service {
     public static final String ACTION_RELOAD = "il.hakolmilemala.m7200caralert.RELOAD";
     private static final String CHANNEL_SERVICE = "m7200_monitor_service";
     private static final String CHANNEL_ALERT = "m7200_low_battery_alert";
+    private static final String CHANNEL_UPDATE = "m7200_app_updates";
     private static final int NOTIFICATION_SERVICE_ID = 7100;
     private static final int NOTIFICATION_ALERT_ID = 7101;
+    private static final int NOTIFICATION_UPDATE_ID = 7102;
     private static final int WARNING_LEVEL = 10;
     private static final int RESET_LEVEL = 15;
     private static final long POLL_INTERVAL_SECONDS = 60;
@@ -153,6 +155,11 @@ public final class M7200MonitorService extends Service {
             state.edit().putBoolean("low_battery_alert_sent", true).apply();
             showLowBatteryAlert(battery.percent);
         }
+
+        // A quiet daily GitHub check runs while monitoring is active.
+        // When internet is unavailable, retry after six hours; the local
+        // M7200 battery monitoring remains independent of GitHub.
+        maybeCheckForAppUpdate();
     }
 
     private Network findWifiNetwork() {
@@ -266,6 +273,15 @@ public final class M7200MonitorService extends Service {
         serviceChannel.setShowBadge(false);
         manager.createNotificationChannel(serviceChannel);
 
+        NotificationChannel updateChannel = new NotificationChannel(
+                CHANNEL_UPDATE,
+                "עדכוני אפליקציה",
+                NotificationManager.IMPORTANCE_DEFAULT
+        );
+        updateChannel.setDescription("הודעה שקטה יחסית כאשר קיימת גרסה חדשה לאפליקציה");
+        updateChannel.setShowBadge(false);
+        manager.createNotificationChannel(updateChannel);
+
         NotificationChannel alertChannel = new NotificationChannel(
                 CHANNEL_ALERT,
                 "התראת סוללה נמוכה",
@@ -275,6 +291,55 @@ public final class M7200MonitorService extends Service {
         alertChannel.enableVibration(true);
         alertChannel.setVibrationPattern(new long[]{0, 400, 200, 400});
         manager.createNotificationChannel(alertChannel);
+    }
+
+    private void maybeCheckForAppUpdate() {
+        SharedPreferences prefs = getSharedPreferences("app_updates", MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        long nextCheck = prefs.getLong("background_next_check", 0L);
+        if (now < nextCheck) return;
+
+        // Set a retry window before the request, so a missing internet link
+        // does not cause a GitHub request on every 60-second battery poll.
+        prefs.edit().putLong("background_next_check", now + 6L * 60L * 60L * 1000L).apply();
+
+        try {
+            UpdateChecker.UpdateInfo update = UpdateChecker.checkForUpdate();
+            prefs.edit().putLong(
+                    "background_next_check",
+                    now + 24L * 60L * 60L * 1000L
+            ).apply();
+
+            NotificationManager manager =
+                    (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (manager == null) return;
+
+            if (update == null) {
+                manager.cancel(NOTIFICATION_UPDATE_ID);
+                return;
+            }
+
+            Intent open = new Intent(this, MainActivity.class);
+            open.putExtra("check_updates_now", true);
+            PendingIntent pending = PendingIntent.getActivity(
+                    this,
+                    3,
+                    open,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+
+            Notification notification = new Notification.Builder(this, CHANNEL_UPDATE)
+                    .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle("קיים עדכון ל-M7200 Car Alert")
+                    .setContentText("גרסה " + update.version + " זמינה. לחץ לפתיחת האפליקציה.")
+                    .setContentIntent(pending)
+                    .setAutoCancel(true)
+                    .setOnlyAlertOnce(true)
+                    .build();
+            manager.notify(NOTIFICATION_UPDATE_ID, notification);
+        } catch (Exception ignored) {
+            // A failed online check must never interfere with battery monitoring.
+        }
     }
 
     private void stopMonitoring() {
