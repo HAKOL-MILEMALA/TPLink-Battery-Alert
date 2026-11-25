@@ -1,8 +1,8 @@
+import java.util.Properties
+
 plugins {
     id 'com.android.application'
 }
-
-import java.util.Properties
 
 def signingProperties = new Properties()
 def signingPropertiesFile = rootProject.file("signing/keystore.properties")
@@ -20,6 +20,10 @@ android {
         targetSdk 32
         versionCode 3
         versionName '1.0.2'
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     compileOptions {
