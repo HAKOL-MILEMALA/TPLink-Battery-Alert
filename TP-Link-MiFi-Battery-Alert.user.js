@@ -804,7 +804,7 @@
         } finally {
             compatibilityCheckInProgress = false;
             if (isRouterManagementPageOpen()) {
-                loseLeadership();
+                pauseForRouterUi();
             }
         }
     }
@@ -1827,7 +1827,7 @@
 
     async function poll() {
         if (IS_ROUTER_PAGE || isRouterManagementPageOpen()) {
-            loseLeadership();
+            pauseForRouterUi();
             return;
         }
 
@@ -1863,6 +1863,13 @@
         pollTimer = null;
     }
 
+    function pauseForRouterUi() {
+        // Release our lease so monitoring can resume promptly after the
+        // router management tab closes instead of waiting for LOCK_TTL.
+        if (ownsLock()) GM_deleteValue(K.lock);
+        loseLeadership();
+    }
+
     async function heartbeat() {
         if (IS_ROUTER_PAGE) {
             loseLeadership();
@@ -1884,7 +1891,7 @@
             // Pause ALL API traffic while its web UI is open. A manual check
             // remains queued and will run once the UI has been closed.
             if (routerUiOpen) {
-                loseLeadership();
+                pauseForRouterUi();
                 return;
             }
 
@@ -1957,7 +1964,7 @@
             // Recheck after the asynchronous lock-election delay. The router
             // UI may have opened while this tab was waiting to acquire the lock.
             if (isRouterManagementPageOpen()) {
-                loseLeadership();
+                pauseForRouterUi();
                 return;
             }
 
@@ -1993,7 +2000,7 @@
     GM_addValueChangeListener(K.routerPresence, () => {
         if (IS_ROUTER_PAGE || compatibilityCheckInProgress) return;
         if (isRouterManagementPageOpen()) {
-            loseLeadership();
+            pauseForRouterUi();
         } else {
             heartbeat();
         }
