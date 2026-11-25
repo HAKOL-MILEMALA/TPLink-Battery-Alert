@@ -931,10 +931,11 @@
         }
 
         const ticket = Date.now();
-        pwChecking = true;
+        pwChecking = false;
         if (value) GM_setValue(K.passwordTicket, ticket);
+        GM_setValue(K.passwordRequest, null);
         GM_setValue(K.compatibilityTicket, ticket);
-        renderPasswordPanel('testing');
+        renderPasswordPanel('queued');
     }
 
 
@@ -1011,6 +1012,11 @@
             accent = '#b06000';
         }
 
+        if (status === 'queued') {
+            message = 'הבקשה נשמרה. בדיקת התאימות תתבצע אוטומטית לאחר סגירת ממשק הנתב, כדי לא ליצור התחברות מקבילה.';
+            accent = '#1967d2';
+        }
+
         const showPasswordField = !hasPassword || status === 'ask' || reason === 'rejected' || failedNow;
         const canReport = profile &&
             (profile.result === 'LIVE_SUCCESS' || profile.result === 'PROTOCOL_MISMATCH');
@@ -1063,9 +1069,14 @@
             buttons.appendChild(save);
         }
 
-        const check = makeElement('button', '', status === 'testing' ? 'בודק...' : 'בדוק תאימות');
+        const check = makeElement(
+            'button',
+            '',
+            status === 'testing' ? 'בודק...' :
+                status === 'queued' ? 'הבדיקה ממתינה לסגירת הנתב' : 'בדוק תאימות'
+        );
         check.id = 'check';
-        check.disabled = status === 'testing';
+        check.disabled = status === 'testing' || status === 'queued';
         check.addEventListener('click', () => {
             const field = pwShadow.getElementById('pw');
             if (field) {
@@ -1080,9 +1091,9 @@
                 return;
             }
             const ticket = Date.now();
-            pwChecking = true;
+            pwChecking = false;
             GM_setValue(K.compatibilityTicket, ticket);
-            renderPasswordPanel('testing');
+            renderPasswordPanel('queued');
         });
         buttons.appendChild(check);
 
@@ -1104,7 +1115,7 @@
         panel.appendChild(makeElement('div', 'hint',
             'הסיסמה נשמרת באחסון Tampermonkey. הסקריפט אינו מצפין אותה בעצמו ואינו שולח אותה לשירות חיצוני.'));
         panel.appendChild(makeElement('div', 'hint',
-            'הניטור האוטומטי מושהה כל עוד ממשק הנתב פתוח. בדיקת תאימות יזומה מתחברת פעם אחת ועלולה להוציא את ממשק הניהול מההתחברות; מומלץ לבצע אותה לפני שינוי הגדרות או לאחר סיום העבודה.'));
+            'הניטור האוטומטי מושהה כל עוד ממשק הנתב פתוח. גם בדיקת תאימות שתבקש עכשיו תמתין לסגירת ממשק הנתב, ואז תתבצע פעם אחת בלבד.'));
 
         pwShadow.replaceChildren(style, panel);
         const field = pwShadow.getElementById('pw');
@@ -1868,12 +1879,11 @@
 
         try {
             const routerUiOpen = isRouterManagementPageOpen();
-            const manualCheckPending = hasPendingCompatibilityCheck();
 
             // The router firmware supports only one management session.
-            // Suspend background polling while its web UI is open, except for
-            // a compatibility check explicitly requested by the user.
-            if (routerUiOpen && !manualCheckPending && !compatibilityCheckInProgress) {
+            // Pause ALL API traffic while its web UI is open. A manual check
+            // remains queued and will run once the UI has been closed.
+            if (routerUiOpen) {
                 loseLeadership();
                 return;
             }
@@ -1946,11 +1956,7 @@
 
             // Recheck after the asynchronous lock-election delay. The router
             // UI may have opened while this tab was waiting to acquire the lock.
-            if (
-                isRouterManagementPageOpen() &&
-                !hasPendingCompatibilityCheck() &&
-                !compatibilityCheckInProgress
-            ) {
+            if (isRouterManagementPageOpen()) {
                 loseLeadership();
                 return;
             }
@@ -2033,11 +2039,11 @@
     });
 
     GM_addValueChangeListener(K.passwordTicket, () => {
-        if (!isLeader) return;
-        if (hasPendingCompatibilityCheck()) return;
-
+        if (IS_ROUTER_PAGE) return;
         session = null;
-        if (!isRouterManagementPageOpen()) pollNow();
+
+        if (hasPendingCompatibilityCheck()) return;
+        if (isLeader && !isRouterManagementPageOpen()) pollNow();
     });
 
     GM_addValueChangeListener(
