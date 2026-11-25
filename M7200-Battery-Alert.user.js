@@ -1,16 +1,16 @@
 // ==UserScript==
 // @name         התראת סוללה ל-TP-Link M7200
 // @namespace    HAKOL-MILEMALA
-// @version      1.4.3
-// @description  ניטור סוללת M7200 עם התראות קצרות, נודניק אוטומטי והערכת זמן לכיבוי
+// @version      1.5.0
+// @description  ניטור סוללה לנתבי TP-Link MiFi תואמים, עם בדיקת תאימות ודיווח
 // @author       HAKOL-MILEMALA
 // @homepageURL  https://github.com/HAKOL-MILEMALA/M7200CarAlert
 // @supportURL   https://github.com/HAKOL-MILEMALA/M7200CarAlert/issues
-// @downloadURL  https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/M7200-Battery-Alert.user.js
-// @updateURL    https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/M7200-Battery-Alert.user.js
+// @downloadURL  https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js
+// @updateURL    https://raw.githubusercontent.com/HAKOL-MILEMALA/M7200CarAlert/main/TP-Link-MiFi-Battery-Alert.user.js
 // @match        https://*/*
-// @match        http://192.168.0.1/*
-// @connect      192.168.0.1
+// @match        http://*/*
+// @connect      *
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -26,8 +26,53 @@
     'use strict';
 
     // ======================== הגדרות ========================
-    const ROUTER = 'http://192.168.0.1';
-    const IS_ROUTER_PAGE = location.origin === ROUTER;
+    const ROUTER_STORAGE_KEY = 'tplink_mifi_router_base';
+
+    function isPrivateIPv4(host) {
+        const parts = String(host || '').split('.').map(Number);
+        if (parts.length !== 4 || parts.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+        return parts[0] === 10 ||
+            (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+            (parts[0] === 192 && parts[1] === 168) ||
+            (parts[0] === 169 && parts[1] === 254);
+    }
+
+    function isAllowedRouterHost(host) {
+        const value = String(host || '').toLowerCase();
+        return isPrivateIPv4(value) ||
+            value === 'tplinkmifi.net' ||
+            value === 'tplinkwifi.net' ||
+            value === 'tplinkmodem.net';
+    }
+
+    function isRouterManagementPage() {
+        if (location.protocol !== 'http:') return false;
+        const saved = String(GM_getValue(ROUTER_STORAGE_KEY, '') || '').replace(/\/+$/, '');
+        if (saved && location.origin === saved) return true;
+        if (!isAllowedRouterHost(location.hostname)) return false;
+
+        const pageText = [
+            document.title || '',
+            document.body ? String(document.body.innerText || '').slice(0, 1800) : ''
+        ].join(' ');
+
+        return /TP[\s-]?Link|MiFi|Mobile\s*Wi-?Fi|tplink/i.test(pageText) ||
+            /\/(?:login|index)\.html$/i.test(location.pathname);
+    }
+
+    const IS_ROUTER_PAGE = isRouterManagementPage();
+    if (IS_ROUTER_PAGE) GM_setValue(ROUTER_STORAGE_KEY, location.origin);
+
+    function getRouterBase() {
+        const stored = String(GM_getValue(ROUTER_STORAGE_KEY, '') || '').trim();
+        try {
+            const url = new URL(stored || 'http://192.168.0.1');
+            if (url.protocol !== 'http:' || !isAllowedRouterHost(url.hostname)) return 'http://192.168.0.1';
+            return url.origin;
+        } catch (_) {
+            return 'http://192.168.0.1';
+        }
+    }
 
     const WARNING_LEVEL = 15;
     const URGENT_LEVEL = 10;
@@ -59,6 +104,9 @@
 
     const K = {
         password: 'm7200_password',
+        routerBase: ROUTER_STORAGE_KEY,
+        compatibilityTicket: 'tplink_mifi_compatibility_ticket',
+        compatibilityState: 'tplink_mifi_compatibility_state',
         passwordTicket: 'm7200_password_ticket',
         passwordRequest: 'm7200_password_request',
         lastPasswordRequest: 'm7200_last_password_request',
@@ -81,6 +129,7 @@
     class NetworkError extends Error {}
     class AuthError extends Error {}
     class PasswordError extends Error {}
+    class ProtocolMismatchError extends Error {}
 
     let isLeader = false;
     let pollInProgress = false;
@@ -94,6 +143,8 @@
     let authFailures = 0;
     let rejectedPassword = null;
     let freshPassword = false;
+    let compatibilityCheckInProgress = false;
+    let handledCompatibilityTicket = Number(GM_getValue(K.compatibilityTicket, 0));
     let handledTicket = Number(GM_getValue(K.passwordTicket, 0));
 
     let toastHost = null;
@@ -152,7 +203,7 @@
             if (decoded) return decoded;
         } catch (_) {}
 
-        throw new Error('תשובת הנתב אינה בפורמט הצפוי');
+        throw new ProtocolMismatchError('הנתב הגיב, אך תשובת ההתחברות אינה במבנה המוכר.');
     }
 
     function randomDigits(length) {
@@ -391,13 +442,14 @@
     // ======================== תקשורת עם הנתב ========================
     function postRouter(endpoint, payload) {
         return new Promise((resolve, reject) => {
+            const router = getRouterBase();
             GM_xmlhttpRequest({
                 method: 'POST',
-                url: `${ROUTER}/cgi-bin/${endpoint}`,
+                url: `${router}/cgi-bin/${endpoint}`,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Referer': `${ROUTER}/`,
-                    'Origin': ROUTER,
+                    'Referer': `${router}/`,
+                    'Origin': router,
                     'User-Agent': 'okhttp/3.11.0'
                 },
                 data: JSON.stringify(payload),
@@ -457,7 +509,7 @@
         const challenge = decodePlainResponse(challengeRaw);
 
         if (!challenge.nonce || !challenge.rsaMod || !challenge.rsaPubKey) {
-            throw new Error('הנתב לא החזיר פרטי התחברות תקינים');
+            throw new ProtocolMismatchError('הנתב הגיב, אך ממשק ההתחברות שלו שונה מהפרוטוקול המוכר.');
         }
 
         const activeSession = {
@@ -585,10 +637,111 @@
         }
     }
 
+
+    function firstNonEmpty(object, keys) {
+        for (const key of keys) {
+            const value = object && object[key] != null ? String(object[key]).trim() : '';
+            if (value && value.toLowerCase() !== 'null') return value;
+        }
+        return '';
+    }
+
+    function routerIdentity(status) {
+        const deviceInfo = status && status.deviceInfo && typeof status.deviceInfo === 'object'
+            ? status.deviceInfo
+            : {};
+        return {
+            model: firstNonEmpty(deviceInfo, ['model', 'modelName', 'deviceModel']) || 'לא דווח',
+            hardwareVersion: firstNonEmpty(deviceInfo, ['hardwareVersion', 'hardwareVer', 'hwVersion', 'hardware_version']) || 'לא דווחה',
+            firmwareVersion: firstNonEmpty(deviceInfo, ['firmwareVersion', 'firmwareVer', 'softwareVersion', 'fwVersion']) || 'לא דווחה'
+        };
+    }
+
+    function safeReportValue(value, fallback = 'לא דווח') {
+        let clean = String(value == null ? '' : value)
+            .replace(/[\r\n\t]/g, ' ')
+            .replace(/[<>]/g, '')
+            .trim();
+        if (!clean) clean = fallback;
+        return clean.slice(0, 160);
+    }
+
+    function saveCompatibilityResult(result, status = null, details = '', batteryPercent = null, charging = null) {
+        const identity = routerIdentity(status);
+        GM_setValue(K.compatibilityState, {
+            result,
+            model: safeReportValue(identity.model),
+            hardwareVersion: safeReportValue(identity.hardwareVersion),
+            firmwareVersion: safeReportValue(identity.firmwareVersion),
+            details: safeReportValue(details, ''),
+            batteryPercent: Number.isFinite(Number(batteryPercent)) ? Number(batteryPercent) : null,
+            charging: charging === true,
+            time: Date.now(),
+            scriptVersion: '1.5.0'
+        });
+    }
+
+    async function runCompatibilityCheck() {
+        if (!isLeader || compatibilityCheckInProgress) return;
+        compatibilityCheckInProgress = true;
+
+        while (pollInProgress) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        let status = null;
+        try {
+            session = null;
+            status = await getStatus();
+            const battery = status && status.battery ? status.battery : null;
+            const level = battery ? Number(battery.voltage) : NaN;
+
+            if (!battery || !Number.isFinite(level) || level < 0 || level > 100) {
+                throw new ProtocolMismatchError(
+                    'הנתב הגיב, אך לא החזיר שדה battery.voltage תקין בטווח 0–100.'
+                );
+            }
+
+            const chargingValue = battery.charging;
+            const charging = chargingValue === true ||
+                chargingValue === 1 ||
+                chargingValue === '1' ||
+                String(chargingValue).toLowerCase() === 'true';
+
+            saveCompatibilityResult(
+                'LIVE_SUCCESS',
+                status,
+                'התחברות לנתב וקריאת אחוז הסוללה הצליחו.',
+                Math.round(level),
+                charging
+            );
+
+            GM_setValue(K.lastStatus, {
+                level: Math.round(level),
+                charging,
+                connected: battery.connected !== false && battery.connected !== 0 && battery.connected !== '0',
+                time: Date.now()
+            });
+        } catch (error) {
+            let result = 'UNKNOWN';
+            if (error instanceof ProtocolMismatchError) result = 'PROTOCOL_MISMATCH';
+            else if (error instanceof PasswordError || error instanceof AuthError) result = 'AUTH_FAILED';
+            else if (error instanceof NetworkError) result = 'NETWORK_ERROR';
+
+            saveCompatibilityResult(
+                result,
+                status,
+                error && error.message ? error.message : String(error)
+            );
+        } finally {
+            compatibilityCheckInProgress = false;
+        }
+    }
+
     // ======================== הזנת סיסמה בדף הנתב ========================
     function openRouterTab() {
         try {
-            GM_openInTab(`${ROUTER}/`, {
+            GM_openInTab(`${getRouterBase()}/`, {
                 active: true,
                 insert: true,
                 setParent: true
@@ -646,131 +799,198 @@
 
     function submitPassword() {
         if (!pwShadow) return;
-
         const input = pwShadow.getElementById('pw');
-        const value = input.value;
+        const value = input ? input.value.trim() : '';
 
-        if (!value) {
-            input.focus();
+        if (value) {
+            GM_setValue(K.password, value);
+            rejectedPassword = null;
+        }
+
+        if (!GM_getValue(K.password, '')) {
+            renderPasswordPanel('ask', {reason: 'missing'});
+            const field = pwShadow.getElementById('pw');
+            if (field) field.focus();
             return;
         }
 
+        const ticket = Date.now();
         pwChecking = true;
-        GM_setValue(K.password, value);
-        GM_setValue(K.passwordTicket, Date.now());
-
-        renderPasswordPanel('checking');
-
-        clearTimeout(pwTimeout);
-
-        pwTimeout = setTimeout(() => {
-            if (pwChecking) {
-                pwChecking = false;
-                renderPasswordPanel('saved');
-            }
-        }, 30000);
+        if (value) GM_setValue(K.passwordTicket, ticket);
+        GM_setValue(K.compatibilityTicket, ticket);
+        renderPasswordPanel('testing');
     }
 
-    // נבנה באמצעות createElement ו-textContent, ללא innerHTML.
+
+    function openCompatibilityReport() {
+        const profile = GM_getValue(K.compatibilityState, null);
+        if (!profile || !['LIVE_SUCCESS', 'PROTOCOL_MISMATCH'].includes(profile.result)) return;
+
+        const model = safeReportValue(profile.model);
+        const title = 'בדיקת תאימות TP-Link MiFi: ' + model;
+        const outcome = profile.result === 'LIVE_SUCCESS'
+            ? 'LIVE_SUCCESS – התחברות וקריאת אחוז סוללה הצליחו'
+            : 'PROTOCOL_MISMATCH – הנתב הגיב אך הפרוטוקול או נתוני הסוללה אינם תואמים';
+
+        const lines = [
+            '### דוח בדיקת תאימות TP-Link MiFi',
+            '',
+            '- תוצאה: ' + outcome,
+            '- דגם: ' + safeReportValue(profile.model),
+            '- גרסת חומרה: ' + safeReportValue(profile.hardwareVersion),
+            '- גרסת קושחה: ' + safeReportValue(profile.firmwareVersion),
+            '- גרסת הסקריפט: 1.5.0',
+            '- אחוז סוללה בבדיקה: ' + (profile.batteryPercent == null ? 'לא התקבל' : profile.batteryPercent + '%'),
+            '- פרטים: ' + safeReportValue(profile.details, 'ללא פירוט'),
+            '',
+            'הדוח נוצר מתוך בדיקת קריאה בלבד.',
+            'לא נכללו בו סיסמת ניהול, כתובת IP מקומית, שם רשת Wi-Fi, כתובת MAC או IMEI.'
+        ];
+
+        const issue = new URL('https://github.com/HAKOL-MILEMALA/M7200CarAlert/issues/new');
+        issue.searchParams.set('title', title);
+        issue.searchParams.set('body', lines.join('\n'));
+
+        try {
+            GM_openInTab(issue.toString(), {active: true, insert: true});
+        } catch (_) {
+            notify('TP-Link MiFi', 'לא הצלחתי לפתוח טיוטת דיווח ב-GitHub.');
+        }
+    }
+
     function renderPasswordPanel(status, request = null, failedNow = false) {
         if (!pwShadow) return;
 
+        const profile = GM_getValue(K.compatibilityState, null);
+        const hasPassword = Boolean(GM_getValue(K.password, ''));
         const reason = request && request.reason;
-        let message;
+
+        let message = 'בדיקת תאימות לנתב TP-Link MiFi';
         let accent = '#1967d2';
 
-        if (status === 'checking') {
-            message = 'שומר ובודק התחברות לנתב...';
-        } else if (status === 'ok') {
-            message = '✔ ההתחברות הצליחה. הניטור פעיל.';
-            accent = '#188038';
-        } else if (status === 'saved') {
-            message = 'הסיסמה נשמרה. הבדיקה תתבצע כשתהיה לשונית HTTPS פעילה ואתה מחובר לרשת הנתב.';
-        } else if (failedNow) {
-            message = 'הנתב דחה את הסיסמה. נסה שוב.';
+        if (status === 'testing') {
+            message = 'בודק התחברות וקריאת סוללה מול הנתב...';
+        } else if (failedNow || reason === 'rejected') {
+            message = 'הנתב דחה את הסיסמה. הזן את סיסמת הניהול הנכונה ונסה שוב.';
             accent = '#c5221f';
-        } else if (reason === 'rejected') {
-            message = 'הנתב דחה את הסיסמה השמורה. הזן את הסיסמה הנכונה.';
-            accent = '#c5221f';
-        } else {
-            message = 'הזן את סיסמת הניהול של הנתב כדי להפעיל את הניטור.';
+        } else if (!hasPassword || reason === 'missing' || status === 'ask') {
+            message = 'הזן את סיסמת הניהול של הנתב כדי לבדוק תאימות ולהפעיל ניטור.';
         }
 
-        const showForm = status === 'ask' || status === 'saved';
+        if (profile && profile.result === 'LIVE_SUCCESS') {
+            const batteryText = profile.batteryPercent == null ? '' : ' • סוללה ' + profile.batteryPercent + '%';
+            message = '✅ תואם בבדיקה חיה: ' + profile.model + batteryText;
+            accent = '#188038';
+        } else if (profile && profile.result === 'PROTOCOL_MISMATCH') {
+            message = '⚠️ הנתב הגיב, אך הפרוטוקול או נתוני הסוללה אינם תואמים כרגע. ' + (profile.details || '');
+            accent = '#c5221f';
+        } else if (profile && profile.result === 'NETWORK_ERROR') {
+            message = 'לא הצלחתי לתקשר עם הנתב. בדוק חיבור Wi-Fi ונסה שוב.';
+            accent = '#c5221f';
+        } else if (profile && profile.result === 'AUTH_FAILED') {
+            message = 'ההתחברות לא הצליחה. בדוק את סיסמת הניהול ונסה שוב.';
+            accent = '#c5221f';
+        } else if (profile && profile.result === 'UNKNOWN' && status !== 'testing') {
+            message = 'לא ניתן לקבוע תאימות כרגע. ' + (profile.details || '');
+            accent = '#b06000';
+        }
+
+        const showPasswordField = !hasPassword || status === 'ask' || reason === 'rejected' || failedNow;
+        const canReport = profile &&
+            (profile.result === 'LIVE_SUCCESS' || profile.result === 'PROTOCOL_MISMATCH');
 
         const style = makeElement('style');
-        style.textContent = `
-            *{box-sizing:border-box}
-            .panel{direction:rtl;width:min(380px,calc(100vw - 36px));font:14px Arial,sans-serif;background:#fff;color:#202124;border:1px solid #dadce0;border-top:5px solid ${accent};border-radius:12px;box-shadow:0 8px 28px #0003;padding:16px}
-            .head{font-size:16px;font-weight:700;margin-bottom:8px}
-            .msg{line-height:1.5;color:#444;margin-bottom:12px}
-            .hint{font-size:12px;line-height:1.5;color:#5f6368;margin:10px 0 0}
-            input{width:100%;font:15px Arial,sans-serif;padding:9px 10px;border:1px solid #bdc1c6;border-radius:7px;margin-bottom:10px;direction:ltr}
-            .row{display:flex;gap:8px}
-            button{font:600 13px Arial;border:0;border-radius:7px;padding:9px 14px;cursor:pointer}
-            #save{background:#1967d2;color:#fff}
-            #close{background:#e8eaed;color:#202124}
-        `;
+        style.textContent =
+            '*{box-sizing:border-box}' +
+            '.panel{direction:rtl;width:min(390px,calc(100vw - 36px));font:14px Arial,sans-serif;background:#fff;color:#202124;border:1px solid #dadce0;border-top:5px solid ' + accent + ';border-radius:12px;box-shadow:0 8px 28px #0003;padding:16px}' +
+            '.head{font-size:16px;font-weight:700;margin-bottom:8px}' +
+            '.msg{line-height:1.5;color:#333;margin-bottom:12px;overflow-wrap:anywhere}' +
+            '.hint{font-size:12px;line-height:1.45;color:#5f6368;margin:10px 0 0}' +
+            'input{width:100%;font:15px Arial,sans-serif;padding:9px 10px;border:1px solid #bdc1c6;border-radius:7px;margin-bottom:10px;direction:ltr}' +
+            '.buttons{display:flex;gap:7px;flex-wrap:wrap}' +
+            'button{font:600 13px Arial;border:0;border-radius:7px;padding:9px 12px;cursor:pointer}' +
+            'button:disabled{opacity:.55;cursor:default}' +
+            '#check,#save{background:#1967d2;color:#fff}' +
+            '#report{background:#188038;color:#fff}' +
+            '#close{background:#e8eaed;color:#202124}' +
+            '.meta{font-size:12px;line-height:1.45;color:#5f6368;margin-top:8px}';
 
         const panel = makeElement('div', 'panel');
         panel.setAttribute('role', 'dialog');
         panel.setAttribute('aria-live', 'polite');
-
-        panel.appendChild(makeElement(
-            'div',
-            'head',
-            '🔑 ניטור סוללת M7200'
-        ));
-
+        panel.appendChild(makeElement('div', 'head', '🔋 TP-Link MiFi – בדיקת סוללה'));
         panel.appendChild(makeElement('div', 'msg', message));
 
-        if (showForm) {
+        if (profile && (profile.result === 'LIVE_SUCCESS' || profile.result === 'PROTOCOL_MISMATCH')) {
+            const identity = 'דגם: ' + (profile.model || 'לא דווח') +
+                ' | חומרה: ' + (profile.hardwareVersion || 'לא דווחה') +
+                ' | קושחה: ' + (profile.firmwareVersion || 'לא דווחה');
+            panel.appendChild(makeElement('div', 'meta', identity));
+        }
+
+        if (showPasswordField) {
             const input = makeElement('input');
             input.id = 'pw';
             input.type = 'password';
             input.autocomplete = 'current-password';
             input.placeholder = 'סיסמת ניהול של הנתב';
             panel.appendChild(input);
-
-            const row = makeElement('div', 'row');
-
-            const save = makeElement('button', '', 'שמירה');
-            save.id = 'save';
-
-            const close = makeElement('button', '', 'סגור');
-            close.id = 'close';
-
-            row.append(save, close);
-            panel.appendChild(row);
-
-            panel.appendChild(makeElement(
-                'div',
-                'hint',
-                'הסיסמה נשמרת באחסון של Tampermonkey. הסקריפט אינו מצפין אותה בעצמו, והיא אינה נשלחת לשירות חיצוני.'
-            ));
         }
+
+        const buttons = makeElement('div', 'buttons');
+
+        if (showPasswordField) {
+            const save = makeElement('button', '', 'שמור ובדוק');
+            save.id = 'save';
+            save.disabled = status === 'testing';
+            save.addEventListener('click', submitPassword);
+            buttons.appendChild(save);
+        }
+
+        const check = makeElement('button', '', status === 'testing' ? 'בודק...' : 'בדוק תאימות');
+        check.id = 'check';
+        check.disabled = status === 'testing';
+        check.addEventListener('click', () => {
+            const field = pwShadow.getElementById('pw');
+            if (field) {
+                if (field.value.trim()) submitPassword();
+                else field.focus();
+                return;
+            }
+            if (!GM_getValue(K.password, '')) {
+                renderPasswordPanel('ask', {reason: 'missing'});
+                const passwordField = pwShadow.getElementById('pw');
+                if (passwordField) passwordField.focus();
+                return;
+            }
+            const ticket = Date.now();
+            pwChecking = true;
+            GM_setValue(K.compatibilityTicket, ticket);
+            renderPasswordPanel('testing');
+        });
+        buttons.appendChild(check);
+
+        if (canReport) {
+            const report = makeElement('button', '', 'דווח ל-GitHub');
+            report.id = 'report';
+            report.addEventListener('click', openCompatibilityReport);
+            buttons.appendChild(report);
+        }
+
+        const close = makeElement('button', '', 'סגור');
+        close.id = 'close';
+        close.addEventListener('click', removePasswordPanel);
+        buttons.appendChild(close);
+
+        panel.appendChild(buttons);
+        panel.appendChild(makeElement('div', 'hint',
+            'הדיווח ייפתח כטיוטה ב-GitHub ולא יישלח בלי אישורך. הדוח אינו כולל סיסמה, כתובת IP, שם רשת Wi-Fi או מזהי מכשיר.'));
+        panel.appendChild(makeElement('div', 'hint',
+            'הסיסמה נשמרת באחסון Tampermonkey. הסקריפט אינו מצפין אותה בעצמו ואינו שולח אותה לשירות חיצוני.'));
 
         pwShadow.replaceChildren(style, panel);
-
-        if (showForm) {
-            const input = pwShadow.getElementById('pw');
-
-            pwShadow.getElementById('save').addEventListener(
-                'click',
-                submitPassword
-            );
-
-            pwShadow.getElementById('close').addEventListener(
-                'click',
-                removePasswordPanel
-            );
-
-            input.addEventListener('keydown', event => {
-                if (event.key === 'Enter') submitPassword();
-            });
-
-            input.focus();
-        }
+        const field = pwShadow.getElementById('pw');
+        if (field && showPasswordField) field.focus();
     }
 
     function showPasswordPanel(request, failedNow = false) {
@@ -787,7 +1007,13 @@
             (document.documentElement || document.body).appendChild(pwHost);
         }
 
-        renderPasswordPanel('ask', request, failedNow);
+        renderPasswordPanel(
+            failedNow || (request && request.reason === 'rejected') || !GM_getValue(K.password, '')
+                ? 'ask'
+                : 'settings',
+            request,
+            failedNow
+        );
     }
 
     function initRouterPage() {
@@ -804,8 +1030,7 @@
         });
 
         const request = GM_getValue(K.passwordRequest, null);
-
-        if (request) showPasswordPanel(request);
+        showPasswordPanel(request || {reason: 'settings'});
     }
 
     // ======================== הערכת זמן לכיבוי ========================
@@ -1214,6 +1439,7 @@
             : {};
 
         const level = Number(battery.voltage);
+        const identity = routerIdentity(status);
 
         const asBool = (value, fallback = false) => {
             if (
@@ -1237,17 +1463,22 @@
         const connected = asBool(battery.connected, true);
 
         if (!Number.isFinite(level) || level < 0 || level > 100) {
-            throw new Error('הנתב לא החזיר אחוז סוללה תקין');
+            saveCompatibilityResult('PROTOCOL_MISMATCH', status, 'הנתב לא החזיר אחוז סוללה תקין בשדה battery.voltage.');
+            throw new ProtocolMismatchError('הנתב הגיב, אך נתוני הסוללה אינם במבנה המוכר.');
         }
 
         const info = {
             level: Math.round(level),
             charging,
             connected,
+            model: identity.model,
+            hardwareVersion: identity.hardwareVersion,
+            firmwareVersion: identity.firmwareVersion,
             time: Date.now()
         };
 
         GM_setValue(K.lastStatus, info);
+        saveCompatibilityResult('LIVE_SUCCESS', status, 'התחברות וקריאת סוללה הצליחו.', info.level, charging);
 
         if (connected) recordSample(info);
 
@@ -1420,6 +1651,14 @@
     }
 
     function handlePollError(error) {
+        if (error instanceof ProtocolMismatchError) {
+            const current = GM_getValue(K.compatibilityState, null);
+            if (!current || current.result !== 'PROTOCOL_MISMATCH') {
+                saveCompatibilityResult('PROTOCOL_MISMATCH', null, error.message || 'פרוטוקול הנתב אינו תואם.');
+            }
+            return NORMAL_INTERVAL;
+        }
+
         if (error instanceof PasswordError) {
             return PASSWORD_WAIT_INTERVAL;
         }
@@ -1443,7 +1682,7 @@
     }
 
     async function poll() {
-        if (!isLeader || pollInProgress || !ownsLock()) return;
+        if (!isLeader || pollInProgress || compatibilityCheckInProgress || !ownsLock()) return;
 
         pollInProgress = true;
         let nextDelay = NORMAL_INTERVAL;
@@ -1578,8 +1817,29 @@
         }
     });
 
+    GM_addValueChangeListener(K.routerBase, () => {
+        if (IS_ROUTER_PAGE) return;
+        session = null;
+        if (isLeader) pollNow();
+    });
+
+    GM_addValueChangeListener(K.compatibilityTicket, (_key, _oldValue, ticket) => {
+        const value = Number(ticket || 0);
+        if (!isLeader || !value || value === handledCompatibilityTicket) return;
+        handledCompatibilityTicket = value;
+        runCompatibilityCheck();
+    });
+
+    GM_addValueChangeListener(K.compatibilityState, () => {
+        if (IS_ROUTER_PAGE && pwHost) {
+            pwChecking = false;
+            renderPasswordPanel('settings');
+        }
+    });
+
     GM_addValueChangeListener(K.passwordTicket, () => {
         if (!isLeader) return;
+        if (Number(GM_getValue(K.compatibilityTicket, 0)) > handledCompatibilityTicket) return;
 
         session = null;
         pollNow();
@@ -1593,14 +1853,8 @@
             const wasChecking = pwChecking;
 
             if (!request) {
-                if (pwHost && wasChecking) {
-                    pwChecking = false;
-                    renderPasswordPanel('ok');
-                    setTimeout(removePasswordPanel, 2500);
-                } else {
-                    removePasswordPanel();
-                }
-
+                pwChecking = false;
+                if (pwHost) renderPasswordPanel('settings');
                 return;
             }
 
