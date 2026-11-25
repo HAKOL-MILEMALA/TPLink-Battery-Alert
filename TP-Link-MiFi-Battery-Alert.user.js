@@ -2034,14 +2034,15 @@
     });
 
     GM_addValueChangeListener(K.compatibilityState, () => {
+        const state = GM_getValue(K.compatibilityState, null);
+
+        if (state && ['LIVE_SUCCESS', 'PROTOCOL_MISMATCH'].includes(state.result)) {
+            GM_setValue(K.passwordRequest, null);
+        }
+
         if (IS_ROUTER_PAGE && pwHost) {
             pwChecking = false;
             renderPasswordPanel('settings');
-
-            const state = GM_getValue(K.compatibilityState, null);
-            if (state && ['LIVE_SUCCESS', 'PROTOCOL_MISMATCH'].includes(state.result)) {
-                GM_setValue(K.passwordRequest, null);
-            }
         }
     });
 
