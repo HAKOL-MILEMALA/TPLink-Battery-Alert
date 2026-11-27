@@ -64,7 +64,7 @@ public final class MainActivity extends Activity {
         appVersionText = findViewById(R.id.appVersionText);
         updateStatusText = findViewById(R.id.updateStatusText);
         checkUpdatesButton = findViewById(R.id.checkUpdatesButton);
-        openUpdateBrowserButton = findViewById(R.id.openUpdateBrowserButton);
+        openUpdateBrowserButton = findViewById(R.id.downloadUpdateButton);
 
         Button startButton = findViewById(R.id.startButton);
         Button stopButton = findViewById(R.id.stopButton);
@@ -88,7 +88,7 @@ public final class MainActivity extends Activity {
         }
 
         openUpdateBrowserButton.setVisibility(View.GONE);
-        updateStatusText.setText("אפשר לבדוק עדכונים בכל רגע. בדיקה אוטומטית מתבצעת לכל היותר פעם בשבוע.");
+        updateStatusText.setText("אפשר לבדוק עדכונים בכל רגע. בנוסף מתבצעת בדיקה אוטומטית ברקע אחת לשבוע.");
         updateStatus();
         UpdateCheckScheduler.schedule(this);
 
