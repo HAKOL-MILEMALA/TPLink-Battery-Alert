@@ -1,25 +1,18 @@
 package il.hakolmilemala.m7200caralert;
 
-import android.content.Context;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Checks public GitHub Releases and downloads a verified APK update. */
+/** Checks public GitHub Releases and returns a trusted browser download link. */
 public final class UpdateChecker {
     private static final String REPOSITORY = "HAKOL-MILEMALA/TPLink-Battery-Alert";
     private static final String RELEASE_API =
@@ -33,20 +26,11 @@ public final class UpdateChecker {
 
     public static final class UpdateInfo {
         public final String version;
-        public final String title;
-        public final String notes;
         public final String downloadUrl;
-        public final String sha256;
-        public final String releaseUrl;
 
-        UpdateInfo(String version, String title, String notes,
-                   String downloadUrl, String sha256, String releaseUrl) {
+        UpdateInfo(String version, String downloadUrl) {
             this.version = version;
-            this.title = title;
-            this.notes = notes;
             this.downloadUrl = downloadUrl;
-            this.sha256 = sha256;
-            this.releaseUrl = releaseUrl;
         }
     }
 
@@ -70,9 +54,7 @@ public final class UpdateChecker {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = reader.readLine()) != null) {
-                    body.append(line);
-                }
+                while ((line = reader.readLine()) != null) body.append(line);
             }
 
             JSONObject release = new JSONObject(body.toString());
@@ -80,130 +62,37 @@ public final class UpdateChecker {
                 throw new Exception("הגרסה האחרונה ב-GitHub אינה Release יציב");
             }
 
-            String tag = release.optString("tag_name", "");
-            String version = extractVersion(tag);
-            if (version == null) {
-                throw new Exception("לא הצלחתי לזהות מספר גרסה ב-GitHub");
-            }
+            String version = extractVersion(release.optString("tag_name", ""));
+            if (version == null) throw new Exception("לא הצלחתי לזהות מספר גרסה ב-GitHub");
 
-            if (compareVersions(version, il.hakolmilemala.m7200caralert.BuildConfig.VERSION_NAME) <= 0) {
-                return null;
-            }
+            if (compareVersions(version, BuildConfig.VERSION_NAME) <= 0) return null;
 
             JSONArray assets = release.optJSONArray("assets");
             if (assets == null) throw new Exception("לא נמצא קובץ APK ב-Release");
 
-            JSONObject apk = null;
+            String downloadUrl = null;
             for (int i = 0; i < assets.length(); i++) {
                 JSONObject candidate = assets.optJSONObject(i);
                 if (candidate == null) continue;
                 String name = candidate.optString("name", "").toLowerCase(Locale.ROOT);
                 if (name.endsWith(".apk") && !name.endsWith(".apk.sha256")) {
-                    apk = candidate;
+                    downloadUrl = candidate.optString("browser_download_url", "");
                     break;
                 }
             }
 
-            if (apk == null) throw new Exception("לא נמצא קובץ APK ב-Release");
-            String downloadUrl = apk.optString("browser_download_url", "");
-            if (!downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) {
-                throw new Exception("קישור ההורדה אינו שייך למאגר הרשמי");
+            if (!isTrustedDownloadUrl(downloadUrl)) {
+                throw new Exception("לא נמצא קישור APK תקין מהמאגר הרשמי");
             }
 
-            String digest = apk.optString("digest", "");
-            if (digest.startsWith("sha256:")) digest = digest.substring("sha256:".length());
-            else digest = "";
-
-            String releaseUrl = release.optString(
-                    "html_url",
-                    "https://github.com/" + REPOSITORY + "/releases"
-            );
-
-            return new UpdateInfo(
-                    version,
-                    release.optString("name", "TP-Link Battery Alert " + version),
-                    release.optString("body", ""),
-                    downloadUrl,
-                    digest,
-                    releaseUrl
-            );
+            return new UpdateInfo(version, downloadUrl);
         } finally {
             if (connection != null) connection.disconnect();
         }
     }
 
-    public static File downloadApk(Context context, UpdateInfo update) throws Exception {
-        if (update == null || update.downloadUrl == null ||
-                !update.downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) {
-            throw new IllegalArgumentException("קישור עדכון לא תקין");
-        }
-
-        HttpURLConnection connection = null;
-        File outputFile = null;
-        try {
-            connection = (HttpURLConnection) new URL(update.downloadUrl).openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(30000);
-            connection.setRequestProperty("User-Agent", "M7200-Car-Alert-Android");
-            connection.setInstanceFollowRedirects(true);
-
-            int code = connection.getResponseCode();
-            if (code < 200 || code >= 300) {
-                throw new Exception("הורדת העדכון נכשלה (HTTP " + code + ")");
-            }
-
-            File directory = new File(context.getFilesDir(), "updates");
-            if (!directory.exists() && !directory.mkdirs()) {
-                throw new Exception("לא הצלחתי ליצור תיקיית עדכונים");
-            }
-
-            outputFile = new File(directory, "M7200-Car-Alert-" + update.version + ".apk");
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-
-            try (InputStream input = new BufferedInputStream(connection.getInputStream());
-                 FileOutputStream output = new FileOutputStream(outputFile)) {
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    digest.update(buffer, 0, count);
-                    output.write(buffer, 0, count);
-                }
-                output.flush();
-            }
-
-            if (!outputFile.isFile() || outputFile.length() < 1024) {
-                throw new Exception("קובץ העדכון שהורד קטן או פגום");
-            }
-
-            if (!update.sha256.isEmpty()) {
-                String actual = toHex(digest.digest());
-                if (!actual.equalsIgnoreCase(update.sha256)) {
-                    throw new Exception("בדיקת תקינות SHA-256 נכשלה. העדכון נמחק.");
-                }
-            } else {
-                // Still consume the digest so the stream is processed consistently.
-                digest.digest();
-            }
-
-            try (InputStream input = new BufferedInputStream(
-                    new java.io.FileInputStream(outputFile))) {
-                if (input.read() != 'P' || input.read() != 'K') {
-                    throw new Exception("הקובץ שהורד אינו APK תקין");
-                }
-            }
-
-            return outputFile;
-        } catch (Exception error) {
-            if (outputFile != null && outputFile.exists()) {
-                // Never leave a partial or unverified installer behind.
-                //noinspection ResultOfMethodCallIgnored
-                outputFile.delete();
-            }
-            throw error;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
+    public static boolean isTrustedDownloadUrl(String url) {
+        return url != null && url.startsWith(RELEASE_DOWNLOAD_PREFIX);
     }
 
     private static String extractVersion(String value) {
@@ -229,11 +118,5 @@ public final class UpdateChecker {
         } catch (NumberFormatException ignored) {
             return 0;
         }
-    }
-
-    private static String toHex(byte[] bytes) {
-        StringBuilder result = new StringBuilder(bytes.length * 2);
-        for (byte value : bytes) result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
-        return result.toString();
     }
 }
