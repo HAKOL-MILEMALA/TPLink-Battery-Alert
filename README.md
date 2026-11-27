@@ -52,9 +52,15 @@ The duration of the temporary heads-up popup is controlled by Android and the he
 
 The app attempts to read battery data using the local management-interface protocol implemented in the client. The repository does not maintain a list of guaranteed-supported router models. The in-app check is the practical test: success means battery data was actually received; failures are shown with the most useful reason available.
 
-## In-app updates
+## Updates
 
-The app can check GitHub Releases, download a newer APK, and open Android's installer. To install an update, allow the app to install packages from this source. Do not uninstall the existing app when updating; uninstalling deletes the saved password.
+Tap **Check for updates** to manually check whether a newer release is available. The app also schedules an automatic background check once every seven days when an internet connection is available. Android may defer the check depending on battery optimization and device conditions.
+
+When an update is found, the app displays a **Download update in browser** button. A weekly background check posts a notification; tapping it opens the direct APK download link in the device's default browser.
+
+The app itself does not download or install APK files and does not request package-install permission. After the browser finishes downloading the APK, open the file and approve installation in Android. Android may ask you to allow app installations from the browser; if needed, that permission is granted to the browser, not to this app.
+
+Do not uninstall the existing app when updating; uninstalling deletes the saved password.
 
 ## Building
 
