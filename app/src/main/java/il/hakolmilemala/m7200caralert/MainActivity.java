@@ -119,8 +119,12 @@ public final class MainActivity extends Activity {
         handler.post(refreshStatus);
         resumePendingInstallIfAllowed();
 
-        if (getSharedPreferences("monitor_state", MODE_PRIVATE)
-                .getBoolean("monitor_enabled", false)) {
+        SharedPreferences monitorState = getSharedPreferences("monitor_state", MODE_PRIVATE);
+        if (monitorState.getBoolean("monitor_enabled", false)) {
+            monitorState.edit()
+                    .putBoolean("connection_checking", true)
+                    .putString("connection_status", "בודק חיבור לנתב…")
+                    .apply();
             startMonitorService(M7200MonitorService.ACTION_CHECK_NOW);
         }
     }
@@ -194,6 +198,7 @@ public final class MainActivity extends Activity {
                 .putBoolean("initial_check_pending", true)
                 .putBoolean("initial_check_completed", false)
                 .putBoolean("connection_ok", false)
+                .putBoolean("connection_checking", true)
                 .putString("connection_status", "בודק חיבור לנתב…")
                 .apply();
 
@@ -206,6 +211,7 @@ public final class MainActivity extends Activity {
         getSharedPreferences("monitor_state", MODE_PRIVATE).edit()
                 .putBoolean("monitor_enabled", false)
                 .putBoolean("initial_check_pending", false)
+                .putBoolean("connection_checking", false)
                 .putString("connection_status", "הניטור הופסק.")
                 .apply();
 
@@ -234,7 +240,9 @@ public final class MainActivity extends Activity {
             String message = "Android לא אפשר להפעיל את הניטור ברקע. פתח את האפליקציה ונסה שוב.";
             getSharedPreferences("monitor_state", MODE_PRIVATE).edit()
                     .putBoolean("connection_ok", false)
+                    .putBoolean("connection_checking", false)
                     .putString("connection_status", message)
+                    .putLong("connection_checked_time", System.currentTimeMillis())
                     .apply();
             Toast.makeText(this, message, Toast.LENGTH_LONG).show();
         }
@@ -247,16 +255,24 @@ public final class MainActivity extends Activity {
         long lastRead = state.getLong("last_battery_time", 0L);
         boolean charging = state.getBoolean("last_battery_charging", false);
 
+        boolean checking = state.getBoolean("connection_checking", false);
         if (lastPercent >= 0 && lastPercent <= 100 && lastRead > 0L) {
             batteryPercentText.setText(lastPercent + "%");
             batteryPercentText.setTextColor(lastPercent <= 10
                     ? 0xFFC0392B : 0xFF176B45);
-            batteryUpdatedText.setText(formatBatteryTimestamp(lastRead) +
+            String freshness = checking
+                    ? "בודק עדכון… • הקריאה הקודמת: " + formatReadTime(lastRead)
+                    : state.getBoolean("connection_ok", false)
+                        ? formatBatteryTimestamp(lastRead)
+                        : formatReadTime(lastRead);
+            batteryUpdatedText.setText(freshness +
                     (charging ? " • בטעינה" : " • לא בטעינה"));
         } else {
             batteryPercentText.setText("--");
             batteryPercentText.setTextColor(0xFF18324A);
-            batteryUpdatedText.setText("עדיין לא התקבלה קריאת סוללה.");
+            batteryUpdatedText.setText(checking
+                    ? "בודק את קריאת הסוללה הראשונה…"
+                    : "עדיין לא התקבלה קריאת סוללה.");
         }
 
         String connection = state.getString("connection_status", "עדיין לא בוצעה בדיקת חיבור.");
@@ -265,7 +281,8 @@ public final class MainActivity extends Activity {
 
         String prefix = enabled ? "הניטור פעיל" : "הניטור כבוי";
         statusText.setText(prefix + "\n" + connection);
-        statusText.setTextColor(!connectionChecked ? 0xFF526579
+        statusText.setTextColor(checking ? 0xFF526579
+                : !connectionChecked ? 0xFF526579
                 : connectionOk ? 0xFF176B45 : 0xFFC0392B);
 
         if (state.getBoolean("initial_check_pending", false) &&
@@ -290,6 +307,10 @@ public final class MainActivity extends Activity {
     private String formatBatteryTimestamp(long timestamp) {
         long age = Math.max(0L, System.currentTimeMillis() - timestamp);
         if (age < 90_000L) return "עודכן עכשיו";
+        return formatReadTime(timestamp);
+    }
+
+    private String formatReadTime(long timestamp) {
         String formatted = new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
                 .format(new Date(timestamp));
         return "עודכן לאחרונה: " + formatted;

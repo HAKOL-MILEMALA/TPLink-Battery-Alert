@@ -161,6 +161,11 @@ public final class M7200MonitorService extends Service {
     private void pollSafely() {
         if (stopping || !isMonitoringEnabled()) return;
 
+        getSharedPreferences("monitor_state", MODE_PRIVATE).edit()
+                .putBoolean("connection_checking", true)
+                .putString("connection_status", "בודק חיבור לנתב…")
+                .apply();
+
         try {
             boolean success = pollOnce();
             completeInitialCheck(success);
@@ -234,6 +239,7 @@ public final class M7200MonitorService extends Service {
                 .putLong("last_battery_time", now)
                 .putBoolean("last_battery_charging", battery.charging)
                 .putBoolean("connection_ok", true)
+                .putBoolean("connection_checking", false)
                 .putString("connection_status", "החיבור הצליח. נתוני הסוללה התקבלו.")
                 .putLong("connection_checked_time", now)
                 .putString("status_text", "החיבור הצליח.")
@@ -245,6 +251,7 @@ public final class M7200MonitorService extends Service {
         long now = System.currentTimeMillis();
         getSharedPreferences("monitor_state", MODE_PRIVATE).edit()
                 .putBoolean("connection_ok", false)
+                .putBoolean("connection_checking", false)
                 .putString("connection_status", message)
                 .putLong("connection_checked_time", now)
                 .putString("status_text", message)
@@ -274,6 +281,7 @@ public final class M7200MonitorService extends Service {
         }
 
         if (battery.charging) {
+            state.edit().putLong("low_battery_alert_last_time", 0L).apply();
             if (manager != null) manager.cancel(NOTIFICATION_ALERT_ID);
             return;
         }

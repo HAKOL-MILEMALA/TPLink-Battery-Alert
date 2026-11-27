@@ -32,6 +32,7 @@ public final class BootReceiver extends BroadcastReceiver {
         } catch (RuntimeException error) {
             context.getSharedPreferences("monitor_state", Context.MODE_PRIVATE).edit()
                     .putBoolean("connection_ok", false)
+                    .putBoolean("connection_checking", false)
                     .putString("connection_status",
                             "Android לא אפשר להפעיל מחדש את הניטור. פתח את האפליקציה כדי לחדש אותו.")
                     .putLong("connection_checked_time", System.currentTimeMillis())
