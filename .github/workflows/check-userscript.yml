@@ -1,0 +1,32 @@
+name: Check userscript
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'TP-Link-MiFi-Battery-Alert.user.js'
+      - 'tests/userscript-selftest.cjs'
+      - '.github/workflows/check-userscript.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'TP-Link-MiFi-Battery-Alert.user.js'
+      - 'tests/userscript-selftest.cjs'
+      - '.github/workflows/check-userscript.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: node --check TP-Link-MiFi-Battery-Alert.user.js
+      - name: Run crypto startup self-test
+        run: node tests/userscript-selftest.cjs
