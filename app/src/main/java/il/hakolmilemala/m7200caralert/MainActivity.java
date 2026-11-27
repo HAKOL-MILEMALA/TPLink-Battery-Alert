@@ -20,9 +20,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.core.content.FileProvider;
 
-import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -30,10 +28,6 @@ import java.util.Locale;
 public final class MainActivity extends Activity {
     private static final String GITHUB_URL =
             "https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert";
-    private static final String UPDATE_PREFS = "app_updates";
-    private static final String KEY_LAST_UPDATE_CHECK = "last_update_check";
-    private static final String KEY_PENDING_INSTALL = "pending_install_path";
-    private static final long AUTO_CHECK_INTERVAL = 7L * 24L * 60L * 60L * 1000L;
     private static final int REQUEST_POST_NOTIFICATIONS = 4702;
 
     private EditText passwordInput;
@@ -43,11 +37,10 @@ public final class MainActivity extends Activity {
     private TextView appVersionText;
     private TextView updateStatusText;
     private Button checkUpdatesButton;
-    private Button downloadUpdateButton;
+    private Button openUpdateBrowserButton;
 
     private boolean pendingMonitoringStartAfterPermission;
     private boolean updateCheckInProgress;
-    private boolean updateDownloadInProgress;
     private UpdateChecker.UpdateInfo availableUpdate;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -71,7 +64,7 @@ public final class MainActivity extends Activity {
         appVersionText = findViewById(R.id.appVersionText);
         updateStatusText = findViewById(R.id.updateStatusText);
         checkUpdatesButton = findViewById(R.id.checkUpdatesButton);
-        downloadUpdateButton = findViewById(R.id.downloadUpdateButton);
+        openUpdateBrowserButton = findViewById(R.id.openUpdateBrowserButton);
 
         Button startButton = findViewById(R.id.startButton);
         Button stopButton = findViewById(R.id.stopButton);
@@ -88,15 +81,16 @@ public final class MainActivity extends Activity {
         howToButton.setOnClickListener(v -> showSetupGuide());
         backgroundSettingsButton.setOnClickListener(v -> openBackgroundPermissionSettings());
         checkUpdatesButton.setOnClickListener(v -> checkForUpdates(true));
-        downloadUpdateButton.setOnClickListener(v -> downloadAndInstallUpdate());
+        openUpdateBrowserButton.setOnClickListener(v -> openUpdateInBrowser());
 
         if (SecurePasswordStore.hasPassword(this)) {
             passwordInput.setHint("הסיסמה כבר שמורה. אפשר להשאיר ריק.");
         }
 
-        downloadUpdateButton.setVisibility(View.GONE);
+        openUpdateBrowserButton.setVisibility(View.GONE);
         updateStatusText.setText("אפשר לבדוק עדכונים בכל רגע. בדיקה אוטומטית מתבצעת לכל היותר פעם בשבוע.");
         updateStatus();
+        UpdateCheckScheduler.schedule(this);
 
         if (getIntent() != null && getIntent().getBooleanExtra("check_updates_now", false)) {
             checkForUpdates(true);
@@ -117,7 +111,6 @@ public final class MainActivity extends Activity {
         super.onResume();
         handler.removeCallbacks(refreshStatus);
         handler.post(refreshStatus);
-        resumePendingInstallIfAllowed();
 
         SharedPreferences monitorState = getSharedPreferences("monitor_state", MODE_PRIVATE);
         if (monitorState.getBoolean("monitor_enabled", false)) {
@@ -406,9 +399,10 @@ public final class MainActivity extends Activity {
     }
 
     private void maybeCheckUpdatesAutomatically() {
-        SharedPreferences prefs = getSharedPreferences(UPDATE_PREFS, MODE_PRIVATE);
-        long lastCheck = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L);
-        if (System.currentTimeMillis() - lastCheck >= AUTO_CHECK_INTERVAL) {
+        SharedPreferences prefs = getSharedPreferences(
+                UpdateCheckScheduler.PREFERENCES_NAME, MODE_PRIVATE);
+        long lastCheck = prefs.getLong(UpdateCheckScheduler.KEY_LAST_SUCCESSFUL_CHECK, 0L);
+        if (System.currentTimeMillis() - lastCheck >= UpdateCheckScheduler.CHECK_INTERVAL_MILLIS) {
             checkForUpdates(false);
         }
     }
@@ -418,29 +412,30 @@ public final class MainActivity extends Activity {
 
         updateCheckInProgress = true;
         checkUpdatesButton.setEnabled(false);
+        openUpdateBrowserButton.setVisibility(View.GONE);
+        availableUpdate = null;
         updateStatusText.setText("בודק אם קיימת גרסה חדשה…");
-
-        getSharedPreferences(UPDATE_PREFS, MODE_PRIVATE).edit()
-                .putLong(KEY_LAST_UPDATE_CHECK, System.currentTimeMillis())
-                .apply();
 
         new Thread(() -> {
             try {
                 UpdateChecker.UpdateInfo found = UpdateChecker.checkForUpdate();
+                UpdateCheckScheduler.recordSuccessfulCheck(getApplicationContext());
+
                 runOnUiThread(() -> {
+                    if (isFinishing()) return;
                     availableUpdate = found;
                     if (found == null) {
-                        downloadUpdateButton.setVisibility(View.GONE);
+                        openUpdateBrowserButton.setVisibility(View.GONE);
                         updateStatusText.setText(manual
                                 ? "האפליקציה מעודכנת ✅ (גרסה " + BuildConfig.VERSION_NAME + ")."
                                 : "לא נמצאה גרסה חדשה. האפליקציה מעודכנת.");
                     } else {
-                        downloadUpdateButton.setVisibility(View.VISIBLE);
-                        downloadUpdateButton.setEnabled(true);
+                        openUpdateBrowserButton.setVisibility(View.VISIBLE);
+                        openUpdateBrowserButton.setEnabled(true);
                         updateStatusText.setText(
                                 "נמצאה גרסה חדשה: " + found.version +
                                 "\nמותקנת כרגע: " + BuildConfig.VERSION_NAME +
-                                "\nאפשר להוריד ולהתקין בלחיצה."
+                                "\nלחץ על הכפתור כדי לפתוח את ההורדה בדפדפן."
                         );
                     }
                     updateCheckInProgress = false;
@@ -448,6 +443,7 @@ public final class MainActivity extends Activity {
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
+                    if (isFinishing()) return;
                     updateStatusText.setText("לא הצלחתי לבדוק עדכונים. בדוק את חיבור האינטרנט ונסה שוב.");
                     updateCheckInProgress = false;
                     checkUpdatesButton.setEnabled(true);
@@ -459,101 +455,24 @@ public final class MainActivity extends Activity {
         }, "battery-alert-update-check").start();
     }
 
-    private void downloadAndInstallUpdate() {
-        if (availableUpdate == null || updateDownloadInProgress) return;
-
-        updateDownloadInProgress = true;
-        downloadUpdateButton.setEnabled(false);
-        checkUpdatesButton.setEnabled(false);
-        updateStatusText.setText("מוריד את גרסה " + availableUpdate.version + "…");
-
-        UpdateChecker.UpdateInfo update = availableUpdate;
-        new Thread(() -> {
-            try {
-                File apk = UpdateChecker.downloadApk(this, update);
-                runOnUiThread(() -> {
-                    updateDownloadInProgress = false;
-                    downloadUpdateButton.setEnabled(true);
-                    checkUpdatesButton.setEnabled(true);
-                    updateStatusText.setText("ההורדה הושלמה. פותח את מתקין Android…");
-                    requestInstallOrOpenInstaller(apk);
-                });
-            } catch (Exception error) {
-                runOnUiThread(() -> {
-                    updateDownloadInProgress = false;
-                    downloadUpdateButton.setEnabled(true);
-                    checkUpdatesButton.setEnabled(true);
-                    updateStatusText.setText("הורדת העדכון נכשלה. אפשר לנסות שוב.");
-                    Toast.makeText(this, error.getMessage() == null
-                            ? "שגיאה בהורדת העדכון."
-                            : error.getMessage(), Toast.LENGTH_LONG).show();
-                });
-            }
-        }, "battery-alert-update-download").start();
-    }
-
-    private void requestInstallOrOpenInstaller(File apk) {
-        if (apk == null || !apk.isFile()) {
-            updateStatusText.setText("קובץ העדכון לא נמצא. נסה להוריד שוב.");
+    private void openUpdateInBrowser() {
+        if (availableUpdate == null ||
+                !UpdateChecker.isTrustedDownloadUrl(availableUpdate.downloadUrl)) {
+            updateStatusText.setText("קישור ההורדה אינו תקין. בדוק שוב אם יש עדכון.");
             return;
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                !getPackageManager().canRequestPackageInstalls()) {
-            getSharedPreferences(UPDATE_PREFS, MODE_PRIVATE).edit()
-                    .putString(KEY_PENDING_INSTALL, apk.getAbsolutePath()).apply();
-
-            new AlertDialog.Builder(this)
-                    .setTitle("נדרשת הרשאת התקנה")
-                    .setMessage("כדי להתקין עדכון, Android צריך לאפשר לאפליקציה להתקין קובץ APK. במסך שייפתח הפעל את האפשרות ״אפשר ממקור זה״, ואז חזור לאפליקציה.")
-                    .setPositiveButton("פתיחת הגדרות", (dialog, which) -> {
-                        try {
-                            Intent settings = new Intent(
-                                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                    Uri.parse("package:" + getPackageName())
-                            );
-                            startActivity(settings);
-                        } catch (Exception error) {
-                            updateStatusText.setText("לא הצלחתי לפתוח את הגדרות ההתקנה.");
-                        }
-                    })
-                    .setNegativeButton("לא עכשיו", (dialog, which) ->
-                            updateStatusText.setText("העדכון הורד ונשמר. אפשר לאפשר התקנה ממקור זה ולחזור לכאן."))
-                    .show();
-            return;
-        }
-
-        launchInstaller(apk);
-    }
-
-    private void resumePendingInstallIfAllowed() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-                !getPackageManager().canRequestPackageInstalls()) return;
-
-        SharedPreferences prefs = getSharedPreferences(UPDATE_PREFS, MODE_PRIVATE);
-        String path = prefs.getString(KEY_PENDING_INSTALL, null);
-        if (path == null || path.isEmpty()) return;
-
-        prefs.edit().remove(KEY_PENDING_INSTALL).apply();
-        File apk = new File(path);
-        if (apk.isFile()) launchInstaller(apk);
-    }
-
-    private void launchInstaller(File apk) {
         try {
-            Uri apkUri = FileProvider.getUriForFile(
-                    this,
-                    getPackageName() + ".fileprovider",
-                    apk
+            Intent browser = new Intent(Intent.ACTION_VIEW, Uri.parse(availableUpdate.downloadUrl));
+            browser.addCategory(Intent.CATEGORY_BROWSABLE);
+            startActivity(browser);
+            updateStatusText.setText(
+                    "הדפדפן נפתח להורדת גרסה " + availableUpdate.version +
+                    ". לאחר ההורדה פתח את קובץ ה-APK ואשר את ההתקנה."
             );
-            Intent install = new Intent(Intent.ACTION_VIEW);
-            install.setDataAndType(apkUri, "application/vnd.android.package-archive");
-            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(install);
         } catch (Exception error) {
-            updateStatusText.setText("Android לא הצליח לפתוח את מתקין החבילות. אפשר להתקין את קובץ ה-APK דרך מנהל הקבצים.");
-            Toast.makeText(this, "לא הצלחתי לפתוח את מתקין Android.", Toast.LENGTH_LONG).show();
+            updateStatusText.setText("לא הצלחתי לפתוח דפדפן להורדת העדכון.");
+            Toast.makeText(this, "לא הצלחתי לפתוח את קישור ההורדה.", Toast.LENGTH_LONG).show();
         }
     }
 }
