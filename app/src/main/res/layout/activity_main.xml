@@ -193,14 +193,14 @@
             android:id="@+id/checkUpdatesButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:text="בדוק עדכונים עכשיו"
+            android:text="בדוק אם יש עדכון"
             android:layout_marginTop="9dp" />
 
         <Button
             android:id="@+id/downloadUpdateButton"
             android:layout_width="match_parent"
             android:layout_height="52dp"
-            android:text="הורד והתקן עדכון"
+            android:text="הורד עדכון בדפדפן"
             android:textStyle="bold"
             android:layout_marginTop="8dp"
             android:visibility="gone" />
