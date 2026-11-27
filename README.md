@@ -8,6 +8,14 @@ An Android app that monitors a mobile router's battery and shows an alert when t
 
 [All releases and changelogs](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases)
 
+## Browser userscript (Tampermonkey)
+
+In addition to the Android app, this repository includes a separate browser userscript for battery monitoring and alerts.
+
+- [Installation, usage, and security notes](USERSCRIPT_EN.md)
+- [Install directly in Tampermonkey](https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js)
+
+
 ## Features
 
 - Connects to the router's Wi-Fi and reads battery information from its local management interface.

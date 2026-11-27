@@ -8,6 +8,14 @@
 
 [כל הגרסאות והיסטוריית השינויים](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases)
 
+## סקריפט לדפדפן (Tampermonkey)
+
+בנוסף לאפליקציית Android, המאגר כולל סקריפט נפרד להצגת מצב הסוללה ולהתראות בזמן עבודה בדפדפן.
+
+- [הוראות התקנה, שימוש ואבטחה](USERSCRIPT.md)
+- [התקנה ישירה ב־Tampermonkey](https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js)
+
+
 ## מה האפליקציה עושה?
 
 - מתחברת לרשת ה־Wi-Fi של הנתב וקוראת את מצב הסוללה מממשק הניהול המקומי.
