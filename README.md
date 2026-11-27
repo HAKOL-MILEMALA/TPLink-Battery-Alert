@@ -1,46 +1,63 @@
 # TP-Link Battery Alert
 
-This repository provides two ways to monitor compatible TP-Link MiFi routers:
+An Android app that monitors a mobile router's battery and shows an alert when the battery reaches 10% or lower.
 
-## Android app
+## Download
 
-- [Download latest APK](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases/latest/download/M7200-Car-Alert.apk)
-- [Hebrew documentation](README_HE.md)
-- [Router compatibility evidence and status](SUPPORTED_ROUTERS.md)
-- [Community compatibility reports](COMMUNITY_COMPATIBILITY.md)
-- [GitHub releases](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases)
+[Direct APK download – always the latest release](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases/latest/download/M7200-Car-Alert.apk)
 
-The Android app performs a live, read-only compatibility check against the connected router. Router protocol support and Android notification delivery are tracked separately. Reports open a public, pre-filled GitHub issue draft after user confirmation; the user must sign in and submit it manually. GitHub Actions aggregates reports by exact model, hardware revision, firmware and distinct GitHub reporters.
+[All releases and changelogs](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases)
 
-## Browser userscript (Chrome + Tampermonkey)
+## Features
 
-- [Install Tampermonkey for Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
-- [Install TP-Link MiFi Battery Alert userscript](https://raw.githubusercontent.com/HAKOL-MILEMALA/TPLink-Battery-Alert/main/TP-Link-MiFi-Battery-Alert.user.js)
+- Connects to the router's Wi-Fi and reads battery information from its local management interface.
+- Shows the latest successfully read battery percentage and when it was updated.
+- Checks the connection immediately when monitoring is enabled and whenever the app is opened.
+- Checks the battery approximately once per minute while monitoring is active.
+- Attempts to resume monitoring after Android boots and to refresh the reading when the screen wakes.
+- Shows a battery alert at 10% or lower while not charging, then repeats it every 3 minutes.
+- Clears the alert and resets reminders when the battery reaches 15% or higher, or when charging begins.
 
-**Userscript version: 2.0.0**
+The app performs local, read-only requests to the router. It does not upload battery data, does not include a community compatibility-reporting system, and does not require a GitHub account.
 
-The userscript warns at 15% battery and raises an urgent alert at 10%. It estimates time to a 5% safety threshold when enough history is available, and supports manual and automatic snoozing.
+## Setup
 
-The browser version performs a live compatibility check using the router's local API. It supports only devices that successfully complete the login flow and return a valid battery percentage; TP-Link branding or tpMiFi-app support alone is not enough to establish protocol compatibility. A report button opens a pre-filled GitHub issue draft for successful tests or protocol mismatches. Reports are never submitted automatically.
+1. Install the APK.
+2. Connect the head unit or phone to the router's Wi-Fi network.
+3. Open the app and enter the router's **administrator password** — not necessarily the Wi-Fi password.
+4. Tap **Save and start monitoring**.
+5. Grant Android's notification permission.
+6. Approve Android's request to let the app run without battery optimization.
 
-For first-time setup, open the router's local HTTP management page once so the script can save its local address. Keep Chrome open with at least one HTTPS tab while monitoring.
+The app immediately reports whether it could connect and read the battery. On success, the battery percentage appears on the main screen. If a check fails, the last successful reading remains visible but is clearly marked as old.
 
-### Privacy and Tampermonkey's cross-origin permission prompt
+## Automatic startup and sleep recovery
 
-Tampermonkey may ask permission before the userscript contacts a router address such as `http://192.168.0.1/cgi-bin/auth_cgi`. This is **not a GitHub data-collection warning**. The source URL is simply the HTTPS tab where the userscript is running (for example, GitHub or Gmail); the destination is the router on the local Wi-Fi network. The script uses the router's local `auth_cgi` endpoint to authenticate and `web_cgi` to read battery status.
+The app requests exemption from Android battery optimization, restarts its monitoring service after boot, and requests a fresh reading when the screen wakes (SCREEN_ON / USER_PRESENT).
 
-The script declares several common router IPs and TP-Link local hostnames in `@connect`. The `@connect *` entry is a fallback for routers using other local IP addresses; it does not make the script send requests to every website. For an unlisted destination, Tampermonkey may still ask the user before the first request. The code itself validates that a router target is a private/link-local IPv4 address or one of the known TP-Link local hostnames before making a request. When prompted, **Always allow** applies to that specific host; there is no need to choose **Always allow all domains**.
+Some head units also impose manufacturer-specific background restrictions. In that case, manually allow:
+- Autostart.
+- Unrestricted background activity.
+- Automatic launch after boot, if available.
 
-The userscript stores the router address, battery history, alert state and router management password in Tampermonkey's local storage. The password is **not encrypted by the userscript itself**; it is used for router authentication and is not included in compatibility reports. The userscript code contains no analytics, tracking, or automatic upload of battery data to a remote server. Tampermonkey separately contacts GitHub for script updates. A compatibility report is opened only after the user clicks the report button; it is a pre-filled issue draft that the user must review and submit manually. It contains model/firmware information and the test result, but excludes the password, local IP address, Wi-Fi name, MAC address and IMEI.
+Android does not provide one universal Autostart setting for all manufacturers. The app therefore cannot guarantee that a manufacturer will not terminate its service during sleep; test the behavior on the actual head unit.
 
-### Using the router web interface
+## Notifications
 
-While a router management tab is open, automatic battery polling is paused. Some MiFi firmware allows only one management session, so background polling could otherwise disconnect the web UI while you change settings. Polling resumes automatically after you leave the router interface. An explicitly requested compatibility check made while the router UI is open is queued and runs once after the router UI closes.
+The battery-alert channel uses high importance, sound, and vibration. When the battery is at or below 10% and is not charging, the app posts an alert and repeats it every 3 minutes. The notification remains in the notification drawer until dismissed by the user or cleared after the battery recovers / charging begins.
 
-After a router has been configured, only its exact saved origin is treated as the management interface. The local `tplinkmifi.net` hostname is also treated as an alias for an already configured private IPv4 router; it does not replace the saved address or clear the password. A different TP-Link MiFi interface is not adopted automatically. If one is detected at another local address, the userscript asks for confirmation; choosing **Switch to this router** replaces the saved origin, clears the old router password and resets battery history and alerts. A delayed-rendering page is checked through a debounced MutationObserver (500 ms) to avoid rescanning the DOM on every mutation.
+The duration of the temporary heads-up popup is controlled by Android and the head unit, not by this app. Repeated reminders reduce the chance of missing it.
 
-The password/compatibility panel no longer opens on every router page visit or refresh. It appears for first-time setup or when credentials are needed. After closing it, a small **Battery settings** button remains in the lower-left corner of the router page and reopens the panel. From that panel you can also replace the saved router password; leave the field blank to test the existing password. The userscript does not add Tampermonkey menu commands.
+## Compatibility
 
-The script uses Tampermonkey `@updateURL` and `@downloadURL` metadata for automatic update checks.
+The app attempts to read battery data using the local management-interface protocol implemented in the client. The repository does not maintain a list of guaranteed-supported router models. The in-app check is the practical test: success means battery data was actually received; failures are shown with the most useful reason available.
 
-See [README_HE.md](README_HE.md) for the full setup guide and [SUPPORTED_ROUTERS.md](SUPPORTED_ROUTERS.md) for current evidence.
+## In-app updates
+
+The app can check GitHub Releases, download a newer APK, and open Android's installer. To install an update, allow the app to install packages from this source. Do not uninstall the existing app when updating; uninstalling deletes the saved password.
+
+## Building
+
+The project uses Gradle and Java 17. A signed APK build in GitHub Actions requires the repository secret M7200_SIGNING_BUNDLE_B64, containing the stable signing-key bundle. The signing key and application ID remain unchanged between versions so releases can update an existing installation.
+
+Every successful build is published in [GitHub Releases](https://github.com/HAKOL-MILEMALA/TPLink-Battery-Alert/releases).

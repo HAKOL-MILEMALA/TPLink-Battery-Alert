@@ -22,34 +22,93 @@
             android:textStyle="bold"
             android:gravity="center"
             android:paddingTop="12dp"
-            android:paddingBottom="8dp" />
+            android:paddingBottom="6dp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="ניטור סוללת נתבי TP-Link MiFi והתראה כשהסוללה מגיעה ל-10% ומטה."
+            android:text="ניטור סוללת הנתב הנייד והתראה כשהסוללה מגיעה ל-10% ומטה."
             android:textColor="#526579"
-            android:textSize="16sp"
-            android:lineSpacingExtra="4dp"
+            android:textSize="15sp"
+            android:lineSpacingExtra="3dp"
             android:gravity="center"
-            android:paddingBottom="8dp" />
+            android:paddingBottom="16dp" />
 
         <Button
             android:id="@+id/howToButton"
             android:layout_width="wrap_content"
             android:layout_height="42dp"
             android:text="איך מתחילים?"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="14dp" />
 
         <TextView
             android:id="@+id/appVersionText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="גרסה מותקנת: 1.0.2"
+            android:text="גרסה מותקנת"
             android:textColor="#708090"
-            android:textSize="13sp"
+            android:textSize="12sp"
             android:gravity="center"
-            android:paddingBottom="20dp" />
+            android:paddingBottom="16dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="#FFFFFF"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="אחוז הסוללה"
+                android:textColor="#526579"
+                android:textSize="15sp"
+                android:gravity="center" />
+
+            <TextView
+                android:id="@+id/batteryPercentText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="--"
+                android:textColor="#18324A"
+                android:textSize="54sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:paddingTop="4dp"
+                android:paddingBottom="2dp" />
+
+            <TextView
+                android:id="@+id/batteryUpdatedText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="עדיין לא התקבלה קריאת סוללה."
+                android:textColor="#708090"
+                android:textSize="13sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="מצב החיבור"
+            android:textColor="#263746"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="7dp" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#FFFFFF"
+            android:padding="14dp"
+            android:text="הניטור כבוי"
+            android:textColor="#526579"
+            android:textSize="14sp"
+            android:lineSpacingExtra="3dp" />
 
         <TextView
             android:layout_width="match_parent"
@@ -58,6 +117,7 @@
             android:textColor="#263746"
             android:textSize="15sp"
             android:textStyle="bold"
+            android:paddingTop="20dp"
             android:paddingBottom="7dp" />
 
         <EditText
@@ -65,7 +125,7 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:backgroundTint="#1769AA"
-            android:hint="הזן את סיסמת הניהול של הנתב"
+            android:hint="הזן את סיסמת הניהול"
             android:inputType="textPassword"
             android:singleLine="true"
             android:textDirection="ltr"
@@ -74,56 +134,11 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="הסיסמה נשמרת מוצפנת במולטימדיה ומשמשת רק להתחברות מקומית לנתב."
+            android:text="זו סיסמת הניהול של ממשק הנתב, ולא בהכרח סיסמת ה-Wi-Fi. הסיסמה נשמרת מוצפנת ומשמשת לחיבור מקומי בלבד."
             android:textColor="#708090"
             android:textSize="12sp"
             android:paddingTop="7dp"
-            android:paddingBottom="20dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="בדיקת דגם ותאימות"
-            android:textColor="#263746"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:paddingTop="4dp"
-            android:paddingBottom="7dp" />
-
-        <TextView
-            android:id="@+id/routerCompatibilityText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#FFFFFF"
-            android:padding="14dp"
-            android:text="עדיין לא נבדקה תאימות. הבדיקה מתחברת לנתב בקריאה בלבד ואינה משנה הגדרות."
-            android:textColor="#34495E"
-            android:textSize="14sp"
-            android:lineSpacingExtra="3dp" />
-
-        <Button
-            android:id="@+id/checkRouterButton"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:text="בדוק דגם, גרסה ותאימות"
-            android:layout_marginTop="8dp" />
-
-        <Button
-            android:id="@+id/reportRouterButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="שלח דוח תאימות ל-GitHub"
-            android:layout_marginTop="7dp"
-            android:visibility="gone" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="לפני דיווח תתבקש לאשר את התוצאה. הדיווח ציבורי ונשלח רק לאחר שתאשר אותו ב-GitHub."
-            android:textColor="#8292A1"
-            android:textSize="12sp"
-            android:paddingTop="5dp"
-            android:paddingBottom="16dp" />
+            android:paddingBottom="14dp" />
 
         <Button
             android:id="@+id/startButton"
@@ -134,45 +149,18 @@
             android:textStyle="bold" />
 
         <Button
-            android:id="@+id/testNotificationButton"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:text="שלח התראת ניסיון"
-            android:layout_marginTop="7dp" />
-
-        <Button
             android:id="@+id/stopButton"
             android:layout_width="match_parent"
-            android:layout_height="50dp"
+            android:layout_height="48dp"
             android:text="הפסק ניטור"
-            android:layout_marginTop="9dp" />
+            android:layout_marginTop="8dp" />
 
-        <View
+        <Button
+            android:id="@+id/backgroundSettingsButton"
             android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#D9E1E8"
-            android:layout_marginTop="22dp"
-            android:layout_marginBottom="18dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="מצב נוכחי"
-            android:textColor="#263746"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:paddingBottom="7dp" />
-
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#FFFFFF"
-            android:padding="16dp"
-            android:text="הניטור עדיין לא הופעל."
-            android:textColor="#34495E"
-            android:textSize="16sp"
-            android:lineSpacingExtra="4dp" />
+            android:layout_height="48dp"
+            android:text="הגדר הפעלה אוטומטית ברקע"
+            android:layout_marginTop="8dp" />
 
         <View
             android:layout_width="match_parent"
@@ -196,7 +184,7 @@
             android:layout_height="wrap_content"
             android:background="#FFFFFF"
             android:padding="14dp"
-            android:text="בדיקת עדכונים אוטומטית מתבצעת מדי פעם, ואפשר לבדוק גם בלחיצה."
+            android:text="אפשר לבדוק עדכונים בכל רגע."
             android:textColor="#34495E"
             android:textSize="14sp"
             android:lineSpacingExtra="3dp" />
@@ -204,14 +192,14 @@
         <Button
             android:id="@+id/checkUpdatesButton"
             android:layout_width="match_parent"
-            android:layout_height="50dp"
+            android:layout_height="48dp"
             android:text="בדוק עדכונים עכשיו"
             android:layout_marginTop="9dp" />
 
         <Button
             android:id="@+id/downloadUpdateButton"
             android:layout_width="match_parent"
-            android:layout_height="54dp"
+            android:layout_height="52dp"
             android:text="הורד והתקן עדכון"
             android:textStyle="bold"
             android:layout_marginTop="8dp"
@@ -227,7 +215,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="זיהוי שער הנתב אוטומטי  •  סף התראה: 10%"
+            android:text="סף התראה: 10% ומטה • תזכורת כל 3 דקות • איפוס בטעינה או מעל 15%"
             android:textColor="#8292A1"
             android:textSize="12sp"
             android:gravity="center"

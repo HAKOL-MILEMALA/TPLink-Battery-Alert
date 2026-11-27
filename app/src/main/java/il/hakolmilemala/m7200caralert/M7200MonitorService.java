@@ -5,13 +5,19 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ServiceInfo;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
+import android.media.AudioAttributes;
 import android.net.Network;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.Settings;
 
+import java.io.IOException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -19,26 +25,39 @@ import java.util.concurrent.TimeUnit;
 public final class M7200MonitorService extends Service {
     public static final String ACTION_STOP = "il.hakolmilemala.m7200caralert.STOP";
     public static final String ACTION_RELOAD = "il.hakolmilemala.m7200caralert.RELOAD";
+    public static final String ACTION_CHECK_NOW = "il.hakolmilemala.m7200caralert.CHECK_NOW";
+
     private static final String CHANNEL_SERVICE = "m7200_monitor_service";
     private static final String CHANNEL_ALERT = "m7200_low_battery_alert";
-    private static final String CHANNEL_UPDATE = "m7200_app_updates";
     private static final int NOTIFICATION_SERVICE_ID = 7100;
     private static final int NOTIFICATION_ALERT_ID = 7101;
-    private static final int NOTIFICATION_UPDATE_ID = 7102;
     private static final int WARNING_LEVEL = 10;
     private static final int RESET_LEVEL = 15;
-    private static final long POLL_INTERVAL_SECONDS = 60;
+    private static final long POLL_INTERVAL_SECONDS = 60L;
+    private static final long ALERT_REPEAT_INTERVAL_MS = 3L * 60L * 1000L;
+    private static final long WAKE_EVENT_COOLDOWN_MS = 15_000L;
 
     private ScheduledExecutorService executor;
     private volatile M7200Client client = new M7200Client();
-    private volatile boolean stopping = false;
-    private boolean loopStarted = false;
+    private volatile boolean stopping;
+    private boolean loopStarted;
+    private boolean wakeReceiverRegistered;
+    private long lastWakeCheckAt;
+
+    private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null || !isMonitoringEnabled()) return;
+            requestWakeCheck();
+        }
+    };
 
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannels();
         executor = createMonitorExecutor();
+        registerWakeReceiver();
     }
 
     @Override
@@ -48,32 +67,75 @@ public final class M7200MonitorService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (!isMonitoringEnabled()) {
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+
         stopping = false;
         boolean reloadRequested = intent != null && ACTION_RELOAD.equals(intent.getAction());
+        boolean checkRequested = intent == null ||
+                ACTION_CHECK_NOW.equals(intent.getAction()) || reloadRequested;
+
         if (reloadRequested) {
             client = new M7200Client();
         }
 
-        promoteToForeground(buildServiceNotification("מפעיל ניטור…"));
+        promoteToForeground(buildServiceNotification("מתחבר לנתב…"));
         if (executor == null || executor.isShutdown()) {
             executor = createMonitorExecutor();
             loopStarted = false;
         }
 
-        // Schedule one non-overlapping polling loop. If settings/password were
-        // reloaded while it was already running, queue an immediate fresh poll.
         if (!loopStarted) {
             loopStarted = true;
             executor.scheduleWithFixedDelay(
                     this::pollSafely,
-                    2,
+                    checkRequested ? 0L : 2L,
                     POLL_INTERVAL_SECONDS,
                     TimeUnit.SECONDS
             );
-        } else if (reloadRequested) {
+        } else if (checkRequested) {
             executor.execute(this::pollSafely);
         }
+
         return START_STICKY;
+    }
+
+    private boolean isMonitoringEnabled() {
+        return getSharedPreferences("monitor_state", MODE_PRIVATE)
+                .getBoolean("monitor_enabled", false);
+    }
+
+    private void registerWakeReceiver() {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(wakeReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(wakeReceiver, filter);
+            }
+            wakeReceiverRegistered = true;
+        } catch (Exception ignored) {
+            wakeReceiverRegistered = false;
+        }
+    }
+
+    private void requestWakeCheck() {
+        long now = System.currentTimeMillis();
+        if (now - lastWakeCheckAt < WAKE_EVENT_COOLDOWN_MS) return;
+        lastWakeCheckAt = now;
+
+        ScheduledExecutorService current = executor;
+        if (current == null || current.isShutdown() || stopping) return;
+
+        current.execute(this::pollSafely);
+        // Some car head units wake the screen before the Wi-Fi radio is ready.
+        // A second check shortly afterwards avoids waiting for the normal minute interval.
+        current.schedule(this::pollSafely, 8L, TimeUnit.SECONDS);
     }
 
     private void promoteToForeground(Notification notification) {
@@ -90,102 +152,140 @@ public final class M7200MonitorService extends Service {
 
     private ScheduledExecutorService createMonitorExecutor() {
         return Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "TP-Link-battery-monitor");
+            Thread thread = new Thread(r, "battery-monitor");
             thread.setDaemon(true);
             return thread;
         });
     }
 
     private void pollSafely() {
-        if (stopping) return;
+        if (stopping || !isMonitoringEnabled()) return;
+
         try {
-            pollOnce();
+            boolean success = pollOnce();
+            completeInitialCheck(success);
         } catch (Exception error) {
-            String message = error.getMessage();
-            if (message == null || message.trim().isEmpty()) message = "שגיאה לא מזוהה";
-            saveStatus("לא הצלחתי לקרוא את מצב הסוללה: " + message + "\nאנסה שוב בעוד דקה.");
-            updateServiceNotification("ממתין לנתב או לסיסמה תקינה");
+            String message = readableError(error);
+            saveConnectionFailure(message);
+            updateServiceNotification("החיבור נכשל • מנסה שוב");
+            completeInitialCheck(false);
         }
     }
 
-    private void pollOnce() throws Exception {
+    private boolean pollOnce() throws Exception {
         Network wifiNetwork = RouterNetworkHelper.findWifiNetwork(this);
         if (wifiNetwork == null) {
-            saveStatus("המולטימדיה אינה מחוברת כרגע לרשת Wi-Fi. הניטור ממתין לחיבור.");
-            updateServiceNotification("ממתין לחיבור Wi-Fi של הנתב");
-            return;
+            saveConnectionFailure("המכשיר אינו מחובר כרגע לרשת ה-Wi-Fi של הנתב.");
+            updateServiceNotification("ממתין לחיבור Wi-Fi");
+            return false;
         }
-        // Force the HTTP requests through Wi-Fi even when Android considers
-        // that network "no internet" or has another default network available.
+
+        // Send router requests through its Wi-Fi network, even when Android
+        // considers the router network to have no internet access.
         client.setWifiNetwork(wifiNetwork);
         client.setRouterHost(RouterNetworkHelper.findRouterHost(this, wifiNetwork));
 
         String password = SecurePasswordStore.read(this);
         if (password == null || password.isEmpty()) {
-            saveStatus("לא נשמרה סיסמת נתב. פתח את האפליקציה והזן אותה.");
+            saveConnectionFailure("לא נשמרה סיסמת ניהול. פתח את האפליקציה והזן אותה.");
             updateServiceNotification("נדרשת סיסמת ניהול");
-            return;
+            return false;
         }
 
         M7200Client.BatteryStatus battery = client.readBattery(password);
         if (!battery.batteryConnected) {
-            saveStatus("הנתב מחובר, אך הסוללה אינה מזוהה.");
-            updateServiceNotification("הסוללה אינה מזוהה");
-            return;
-        }
-
-        SharedPreferences state = getSharedPreferences("monitor_state", MODE_PRIVATE);
-        boolean alreadyAlerted = state.getBoolean("low_battery_alert_sent", false);
-
-        // Re-arm only after the battery has recovered to 15%.
-        // Merely plugging in briefly while still below 15% must not cause a duplicate warning.
-        if (battery.percent >= RESET_LEVEL) {
-            alreadyAlerted = false;
-            state.edit().putBoolean("low_battery_alert_sent", false).apply();
-            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (manager != null) manager.cancel(NOTIFICATION_ALERT_ID);
+            saveConnectionFailure("הנתב ענה, אך לא התקבלו נתוני סוללה מוכרים.");
+            updateServiceNotification("נתוני הסוללה לא זוהו");
+            return false;
         }
 
         saveBattery(battery);
-        updateServiceNotification("ניטור פעיל • סוללה " + battery.percent + "%");
+        updateServiceNotification("סוללה: " + battery.percent + "%" +
+                (battery.charging ? " • בטעינה" : ""));
 
-        if (!battery.charging && battery.percent <= WARNING_LEVEL && !alreadyAlerted) {
-            state.edit().putBoolean("low_battery_alert_sent", true).apply();
-            showLowBatteryAlert(battery.percent);
+        handleLowBattery(battery);
+        return true;
+    }
+
+    private String readableError(Exception error) {
+        if (error instanceof M7200Client.PasswordRejectedException) {
+            return "סיסמת הניהול נדחתה. בדוק את הסיסמה שהזנת.";
+        }
+        if (error instanceof M7200Client.ProtocolMismatchException) {
+            return "הנתב הגיב, אבל מבנה התקשורת או נתוני הסוללה אינו מוכר.";
+        }
+        if (error instanceof IOException) {
+            return "לא הצלחתי לתקשר עם הנתב. בדוק שה-Wi-Fi מחובר ושהנתב זמין.";
         }
 
-        // A quiet GitHub check is shared with the app screen and runs
-        // automatically no more than once every seven days.
-        // A failed online check also waits until the next weekly window;
-        // local M7200 battery monitoring remains independent of GitHub.
-        maybeCheckForAppUpdate();
+        String detail = error.getMessage();
+        if (detail == null || detail.trim().isEmpty()) {
+            return "החיבור נכשל בגלל שגיאה לא מזוהה.";
+        }
+        detail = detail.replace('\n', ' ').replace('\r', ' ').trim();
+        if (detail.length() > 170) detail = detail.substring(0, 170);
+        return "החיבור נכשל: " + detail;
     }
 
     private void saveBattery(M7200Client.BatteryStatus battery) {
-        String model = battery.model == null ? "" : battery.model.trim();
-        getSharedPreferences("router_profile", MODE_PRIVATE).edit()
-                .putString("model", model)
-                .putString("hardware_version", battery.hardwareVersion)
-                .putString("firmware_version", battery.firmwareVersion)
-                .putLong("last_checked", System.currentTimeMillis())
-                .putBoolean("compatible", true)
+        long now = System.currentTimeMillis();
+        getSharedPreferences("monitor_state", MODE_PRIVATE).edit()
+                .putInt("last_battery_percent", battery.percent)
+                .putLong("last_battery_time", now)
+                .putBoolean("last_battery_charging", battery.charging)
+                .putBoolean("connection_ok", true)
+                .putString("connection_status", "החיבור הצליח. נתוני הסוללה התקבלו.")
+                .putLong("connection_checked_time", now)
+                .putString("status_text", "החיבור הצליח.")
+                .putLong("status_time", now)
                 .apply();
-        String displayName = model.isEmpty() ? "TP-Link MiFi" : model;
-        saveStatus("מחובר ל-" + displayName + "\nסוללה: " + battery.percent + "%" +
-                (battery.charging ? " • בטעינה" : " • לא בטעינה"));
     }
 
-    private String currentRouterName() {
-        String model = getSharedPreferences("router_profile", MODE_PRIVATE).getString("model", "");
-        return model == null || model.trim().isEmpty() ? "TP-Link MiFi" : model.trim();
+    private void saveConnectionFailure(String message) {
+        long now = System.currentTimeMillis();
+        getSharedPreferences("monitor_state", MODE_PRIVATE).edit()
+                .putBoolean("connection_ok", false)
+                .putString("connection_status", message)
+                .putLong("connection_checked_time", now)
+                .putString("status_text", message)
+                .putLong("status_time", now)
+                .apply();
+        // Keep the last real reading so the UI can display it as an older value.
     }
 
-    private void saveStatus(String status) {
-        getSharedPreferences("monitor_state", MODE_PRIVATE)
-                .edit()
-                .putString("status_text", status)
-                .putLong("status_time", System.currentTimeMillis())
+    private void completeInitialCheck(boolean success) {
+        SharedPreferences state = getSharedPreferences("monitor_state", MODE_PRIVATE);
+        if (!state.getBoolean("initial_check_pending", false)) return;
+        state.edit()
+                .putBoolean("initial_check_success", success)
+                .putBoolean("initial_check_completed", true)
                 .apply();
+    }
+
+    private void handleLowBattery(M7200Client.BatteryStatus battery) {
+        SharedPreferences state = getSharedPreferences("monitor_state", MODE_PRIVATE);
+        NotificationManager manager =
+                (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+        if (battery.percent >= RESET_LEVEL) {
+            state.edit().putLong("low_battery_alert_last_time", 0L).apply();
+            if (manager != null) manager.cancel(NOTIFICATION_ALERT_ID);
+            return;
+        }
+
+        if (battery.charging) {
+            if (manager != null) manager.cancel(NOTIFICATION_ALERT_ID);
+            return;
+        }
+
+        if (battery.percent > WARNING_LEVEL) return;
+
+        long now = System.currentTimeMillis();
+        long lastAlert = state.getLong("low_battery_alert_last_time", 0L);
+        if (lastAlert == 0L || now - lastAlert >= ALERT_REPEAT_INTERVAL_MS) {
+            showLowBatteryAlert(battery.percent);
+            state.edit().putLong("low_battery_alert_last_time", now).apply();
+        }
     }
 
     private Notification buildServiceNotification(String text) {
@@ -198,7 +298,7 @@ public final class M7200MonitorService extends Service {
         );
         return new Notification.Builder(this, CHANNEL_SERVICE)
                 .setSmallIcon(android.R.drawable.stat_sys_warning)
-                .setContentTitle("TP-Link Battery Alert")
+                .setContentTitle("ניטור סוללה פעיל")
                 .setContentText(text)
                 .setContentIntent(pending)
                 .setOngoing(true)
@@ -209,7 +309,9 @@ public final class M7200MonitorService extends Service {
 
     private void updateServiceNotification(String text) {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify(NOTIFICATION_SERVICE_ID, buildServiceNotification(text));
+        if (manager != null) {
+            manager.notify(NOTIFICATION_SERVICE_ID, buildServiceNotification(text));
+        }
     }
 
     private void showLowBatteryAlert(int percent) {
@@ -221,19 +323,21 @@ public final class M7200MonitorService extends Service {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        String message = "נותרו " + percent + "% סוללה. חבר את הנתב הנייד למטען.";
         Notification notification = new Notification.Builder(this, CHANNEL_ALERT)
                 .setSmallIcon(android.R.drawable.stat_sys_warning)
-                .setContentTitle("🔋 סוללת " + currentRouterName() + " חלשה")
-                .setContentText("נותרו " + percent + "% סוללה. כדאי לחבר את המטען עכשיו.")
-                .setStyle(new Notification.BigTextStyle().bigText(
-                        "נותרו " + percent + "% סוללה בנתב " + currentRouterName() + ". " +
-                                "כדאי לחבר אותו למטען לפני שייכבה."
-                ))
+                .setContentTitle("התראת סוללה")
+                .setContentText(message)
+                .setStyle(new Notification.BigTextStyle().bigText(message))
                 .setContentIntent(pending)
-                .setAutoCancel(true)
+                .setAutoCancel(false)
+                .setOnlyAlertOnce(false)
+                .setWhen(System.currentTimeMillis())
+                .setShowWhen(true)
                 .setCategory(Notification.CATEGORY_ALARM)
                 .setPriority(Notification.PRIORITY_MAX)
                 .setDefaults(Notification.DEFAULT_ALL)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .build();
 
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
@@ -247,7 +351,7 @@ public final class M7200MonitorService extends Service {
 
         NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_SERVICE,
-                "פעילות TP-Link Battery Alert",
+                "פעילות ניטור סוללה",
                 NotificationManager.IMPORTANCE_LOW
         );
         serviceChannel.setDescription("חיווי שקט שהניטור פועל ברקע");
@@ -256,88 +360,38 @@ public final class M7200MonitorService extends Service {
         serviceChannel.setShowBadge(false);
         manager.createNotificationChannel(serviceChannel);
 
-        NotificationChannel updateChannel = new NotificationChannel(
-                CHANNEL_UPDATE,
-                "עדכוני אפליקציה",
-                NotificationManager.IMPORTANCE_DEFAULT
-        );
-        updateChannel.setDescription("הודעה שקטה יחסית כאשר קיימת גרסה חדשה לאפליקציה");
-        updateChannel.setShowBadge(false);
-        manager.createNotificationChannel(updateChannel);
-
         NotificationChannel alertChannel = new NotificationChannel(
                 CHANNEL_ALERT,
                 "התראת סוללה נמוכה",
                 NotificationManager.IMPORTANCE_HIGH
         );
-        alertChannel.setDescription("התראה בולטת כאשר סוללת נתב TP-Link מגיעה ל-10%");
+        alertChannel.setDescription("התראה בולטת ותזכורת כל 3 דקות כשהסוללה ב-10% ומטה ואינה בטעינה");
         alertChannel.enableVibration(true);
-        alertChannel.setVibrationPattern(new long[]{0, 400, 200, 400});
+        alertChannel.setVibrationPattern(new long[]{0L, 550L, 220L, 550L, 220L, 750L});
+        alertChannel.setSound(
+                Settings.System.DEFAULT_NOTIFICATION_URI,
+                new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .build()
+        );
         manager.createNotificationChannel(alertChannel);
-    }
-
-    private void maybeCheckForAppUpdate() {
-        SharedPreferences prefs = getSharedPreferences("app_updates", MODE_PRIVATE);
-        long now = System.currentTimeMillis();
-        long lastCheck = prefs.getLong("last_update_check", 0L);
-        long weeklyInterval = 7L * 24L * 60L * 60L * 1000L;
-
-        // The activity and service share one timestamp so they do not
-        // independently query GitHub on the same weekly cycle.
-        if (now - lastCheck < weeklyInterval) return;
-
-        // Record the attempt before networking. If internet is unavailable,
-        // the next automatic attempt will be no earlier than one week later.
-        prefs.edit().putLong("last_update_check", now).apply();
-
-        try {
-            UpdateChecker.UpdateInfo update = UpdateChecker.checkForUpdate();
-
-            NotificationManager manager =
-                    (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (manager == null) return;
-
-            if (update == null) {
-                manager.cancel(NOTIFICATION_UPDATE_ID);
-                prefs.edit().remove("last_notified_update_version").apply();
-                return;
-            }
-
-            String lastNotified = prefs.getString("last_notified_update_version", "");
-            if (update.version.equals(lastNotified)) return;
-
-            Intent open = new Intent(this, MainActivity.class);
-            open.putExtra("check_updates_now", true);
-            PendingIntent pending = PendingIntent.getActivity(
-                    this,
-                    3,
-                    open,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-            );
-
-            Notification notification = new Notification.Builder(this, CHANNEL_UPDATE)
-                    .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                    .setContentTitle("קיים עדכון ל-TP-Link Battery Alert")
-                    .setContentText("גרסה " + update.version + " זמינה. לחץ לפתיחת האפליקציה.")
-                    .setContentIntent(pending)
-                    .setAutoCancel(true)
-                    .setOnlyAlertOnce(true)
-                    .build();
-            manager.notify(NOTIFICATION_UPDATE_ID, notification);
-            prefs.edit().putString("last_notified_update_version", update.version).apply();
-        } catch (Exception ignored) {
-            // A failed online check must never interfere with battery monitoring.
-            // The weekly timestamp prevents repeated requests while offline.
-        }
     }
 
     private void stopMonitoring() {
         stopping = true;
-        getSharedPreferences("monitor_state", MODE_PRIVATE)
-                .edit()
+        getSharedPreferences("monitor_state", MODE_PRIVATE).edit()
                 .putBoolean("monitor_enabled", false)
+                .putBoolean("initial_check_pending", false)
+                .putString("connection_status", "הניטור הופסק.")
                 .apply();
+
         if (executor != null) executor.shutdownNow();
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) {
+            manager.cancel(NOTIFICATION_ALERT_ID);
+            manager.cancel(NOTIFICATION_SERVICE_ID);
+        }
+
         stopForeground(true);
         stopSelf();
     }
@@ -345,6 +399,13 @@ public final class M7200MonitorService extends Service {
     @Override
     public void onDestroy() {
         stopping = true;
+        if (wakeReceiverRegistered) {
+            try {
+                unregisterReceiver(wakeReceiver);
+            } catch (Exception ignored) {
+            }
+            wakeReceiverRegistered = false;
+        }
         if (executor != null) executor.shutdownNow();
         loopStarted = false;
         super.onDestroy();
