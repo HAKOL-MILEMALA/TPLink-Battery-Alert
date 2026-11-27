@@ -16,6 +16,8 @@ public final class BootReceiver extends BroadcastReceiver {
             return;
         }
 
+        UpdateCheckScheduler.schedule(context);
+
         boolean enabled = context.getSharedPreferences("monitor_state", Context.MODE_PRIVATE)
                 .getBoolean("monitor_enabled", false);
         if (!enabled) return;
